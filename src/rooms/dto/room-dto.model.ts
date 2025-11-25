@@ -1,6 +1,6 @@
 import { Expose } from "class-transformer";
-import { RoomState } from "src/model/enum/room-state.enum";
 
+import { RoomState } from "../../model/enum/room-state.enum";
 import type { MemberDtoModel } from "./member-dto.model";
 
 export class RoomDtoModel {
@@ -20,7 +20,7 @@ export class RoomDtoModel {
     members: MemberDtoModel[];
 
     @Expose()
-    secret: string;
+    secret: string | null;
 
     @Expose()
     state: RoomState;

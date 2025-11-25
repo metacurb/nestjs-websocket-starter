@@ -7,7 +7,7 @@ import {
     MinLength,
 } from "class-validator";
 
-import { ROOM_CODE_LENGTH } from "../util/constants";
+import { ROOM_CODE_LENGTH } from "../../constants";
 
 export class UpdateHostInput {
     @IsMongoId()

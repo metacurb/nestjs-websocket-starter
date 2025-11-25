@@ -1,0 +1,8 @@
+export const ROOM_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+export const ROOM_CODE_LENGTH = 4;
+
+export const ROOM_MIN_MAX_MEMBERS = 20;
+export const ROOM_MAX_MAX_MEMBERS = 2;
+
+export const USER_NAME_MAX_LENGTH = 20;
+export const USER_NAME_MIN_LENGTH = 2;

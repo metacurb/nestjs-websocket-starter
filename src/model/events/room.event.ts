@@ -1,4 +1,4 @@
-import type { RoomDtoModel } from "src/rooms/dto/room-dto.model";
+import type { RoomDtoModel } from "../../rooms/dto/room-dto.model";
 
 export type GatewayEvent = RoomExitedEvent | RoomHostChangeEvent | RoomUpdatedEvent;
 

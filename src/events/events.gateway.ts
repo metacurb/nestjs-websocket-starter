@@ -9,24 +9,23 @@ import {
 } from "@nestjs/websockets";
 import { PinoLogger } from "nestjs-pino";
 import { Server, Socket } from "socket.io";
-import { UserException } from "src/common/user.exception";
+
+import { UserException } from "../common/user.exception";
+import { EventsMessages } from "../model/events/events.messages";
 import type {
     GatewayEvent,
     RoomExitedEvent,
     RoomHostChangeEvent,
     RoomUpdatedEvent,
-} from "src/model/events/room.event";
-import { RoomEvent, RoomExitReason } from "src/model/events/room.event";
-import { ConnectToRoomInput } from "src/rooms/dto/connect-to-room.input";
-import { UpdateHostInput } from "src/rooms/dto/give-host.input";
-import { KickUserInput } from "src/rooms/dto/kick-user.input";
-import { LeaveRoomInput } from "src/rooms/dto/leave-room.input";
-import { LockRoomInput } from "src/rooms/dto/look-room.input";
-import { RoomsService } from "src/rooms/rooms.service";
-import type { Room } from "src/rooms/schema/room.schema";
-import { mapRoomToDto } from "src/rooms/util/map-room-to-dto";
-
-import { EventsMessages } from "../model/events/events.messages";
+} from "../model/events/room.event";
+import { RoomEvent, RoomExitReason } from "../model/events/room.event";
+import { ConnectToRoomInput } from "../rooms/dto/connect-to-room.input";
+import { UpdateHostInput } from "../rooms/dto/give-host.input";
+import { KickUserInput } from "../rooms/dto/kick-user.input";
+import { LeaveRoomInput } from "../rooms/dto/leave-room.input";
+import { LockRoomInput } from "../rooms/dto/look-room.input";
+import { RoomsService } from "../rooms/rooms.service";
+import { mapRoomToDto } from "../rooms/util/map-room-to-dto";
 
 @UsePipes(new ValidationPipe())
 @WebSocketGateway({
@@ -44,11 +43,6 @@ export class EventsGateway implements OnGatewayDisconnect {
         private readonly roomsService: RoomsService,
     ) {
         this.logger.setContext(this.constructor.name);
-    }
-
-    private userIsHost(socketId: string, room: Room) {
-        if (!socketId) return false;
-        return room.members.find((member) => member.socketId === socketId)?.isHost;
     }
 
     private sendToRoom(socket: Socket, roomId: string, payload: GatewayEvent) {
@@ -155,7 +149,7 @@ export class EventsGateway implements OnGatewayDisconnect {
         socket: Socket,
         @MessageBody()
         input: KickUserInput,
-    ): Promise<GatewayEvent> {
+    ): Promise<GatewayEvent | undefined> {
         const result = await this.roomsService.kick(socket.id, input);
 
         if (!result) {
@@ -163,7 +157,12 @@ export class EventsGateway implements OnGatewayDisconnect {
             return;
         }
 
-        const { member, room } = result;
+        const { kickedMember, room } = result;
+
+        if (!room) {
+            // TODO handle failure (room was deleted)
+            return;
+        }
 
         const update: RoomUpdatedEvent = {
             opCode: RoomEvent.Updated,
@@ -173,7 +172,7 @@ export class EventsGateway implements OnGatewayDisconnect {
             },
         };
 
-        await this.sendToRoomMember(member.socketId, {
+        await this.sendToRoomMember(kickedMember.socketId, {
             opCode: RoomEvent.Exited,
             roomCode: room.code,
             data: {
@@ -181,7 +180,7 @@ export class EventsGateway implements OnGatewayDisconnect {
             },
         });
 
-        await this.server.in(member.socketId).socketsLeave(room.code);
+        await this.server.in(kickedMember.socketId).socketsLeave(room.code);
         await this.sendToRoom(socket, room.code, update);
 
         return update;
@@ -193,7 +192,7 @@ export class EventsGateway implements OnGatewayDisconnect {
         socket: Socket,
         @MessageBody()
         oldSocketId: string,
-    ): Promise<GatewayEvent> {
+    ): Promise<GatewayEvent | undefined> {
         const result = await this.roomsService.reconnect(socket.id, oldSocketId);
 
         if (!result) {
@@ -231,7 +230,7 @@ export class EventsGateway implements OnGatewayDisconnect {
         socket: Socket,
         @MessageBody()
         input: UpdateHostInput,
-    ): Promise<GatewayEvent> {
+    ): Promise<GatewayEvent | undefined> {
         const result = await this.roomsService.updateHost(socket.id, input);
 
         if (!result) {
@@ -267,7 +266,7 @@ export class EventsGateway implements OnGatewayDisconnect {
         socket: Socket,
         @MessageBody()
         input: LockRoomInput,
-    ): Promise<GatewayEvent> {
+    ): Promise<GatewayEvent | undefined> {
         const result = await this.roomsService.lock(socket.id, input);
 
         if (!result) {
@@ -293,7 +292,7 @@ export class EventsGateway implements OnGatewayDisconnect {
     async handleDisconnect(
         @ConnectedSocket()
         socket: Socket,
-    ): Promise<GatewayEvent> {
+    ): Promise<GatewayEvent | undefined> {
         const result = await this.roomsService.disconnect(socket.id);
 
         if (!result) {

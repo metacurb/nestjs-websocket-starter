@@ -1,6 +1,6 @@
 import { customAlphabet } from "nanoid";
 
-import { ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH } from "./constants";
+import { ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH } from "../../constants";
 import { generateRoomCode } from "./generate-room-code";
 
 jest.mock("nanoid", () => ({

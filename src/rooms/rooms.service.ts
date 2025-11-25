@@ -1,12 +1,13 @@
 import { Injectable } from "@nestjs/common";
 import { InjectModel } from "@nestjs/mongoose";
-import mongoose, { Model } from "mongoose";
+import mongoose, { Model, QueryFilter, UpdateQuery } from "mongoose";
 import { nanoid } from "nanoid";
 import { PinoLogger } from "nestjs-pino";
-import { UserException } from "src/common/user.exception";
-import { RoomState } from "src/model/enum/room-state.enum";
-import type { RoomDataModel } from "src/model/room-data.model";
 
+import { UserException } from "../common/user.exception";
+import { RoomState } from "../model/enum/room-state.enum";
+import { KickedRoomDataModel } from "../model/kicked-room-data.model";
+import type { RoomDataModel } from "../model/room-data.model";
 import type { ConnectToRoomInput } from "./dto/connect-to-room.input";
 import type { CreateRoomInput } from "./dto/create-room.input";
 import type { UpdateHostInput } from "./dto/give-host.input";
@@ -30,15 +31,15 @@ export class RoomsService {
         this.logger.setContext(this.constructor.name);
     }
 
-    private getRoomHost(room: Room) {
+    private getRoomHost(room: Room): Member | undefined {
         return room.members.find(({ isHost }) => isHost);
     }
 
-    async getByCode(code: string) {
+    async getByCode(code: string): Promise<Room | null> {
         return await this._findOne({ code: code.toUpperCase() });
     }
 
-    async getByMemberId(memberId: string): Promise<Room> {
+    async getByMemberId(memberId: string): Promise<Room | null> {
         return await this._findOne({ "members._id": new mongoose.Types.ObjectId(memberId) });
     }
 
@@ -58,12 +59,11 @@ export class RoomsService {
             secret: nanoid(),
             state: RoomState.Created,
         });
-        await room.save();
 
-        return this.getByCode(room.code);
+        return await room.save();
     }
 
-    async join(code: string, input: JoinRoomInput): Promise<MemberDocument> {
+    async join(code: string, input: JoinRoomInput): Promise<MemberDocument | null> {
         const room = await this.getByCode(code);
 
         if (!room) return null;
@@ -82,7 +82,7 @@ export class RoomsService {
             socketId: undefined,
         });
 
-        await this._findOneAndUpdate({ _id: room._id }, { $push: { members: member } });
+        await this._findOneAndUpdate({ code: room.code }, { $push: { members: member } });
 
         return member;
     }
@@ -91,7 +91,7 @@ export class RoomsService {
         return this.roomModel.deleteOne({ code });
     }
 
-    async connect(socketId: string, input: ConnectToRoomInput): Promise<RoomDataModel> {
+    async connect(socketId: string, input: ConnectToRoomInput): Promise<RoomDataModel | null> {
         const { memberId, roomCode } = input;
 
         const result = await this._findOneAndUpdate(
@@ -99,10 +99,12 @@ export class RoomsService {
             { $set: { "members.$.connected": true, "members.$.socketId": socketId } },
         );
 
+        if (!result) return null;
+
         return mapRoomToRoomData(result, socketId);
     }
 
-    async disconnect(socketId: string): Promise<RoomDataModel> {
+    async disconnect(socketId: string): Promise<RoomDataModel | null> {
         if (!socketId) throw new UserException("Invalid socket ID");
 
         const result = await this._findOneAndUpdate(
@@ -110,19 +112,23 @@ export class RoomsService {
             { $set: { "members.$.connected": false } },
         );
 
+        if (!result) return null;
+
         return mapRoomToRoomData(result, socketId);
     }
 
-    async reconnect(newSocketId: string, oldSocketId: string): Promise<RoomDataModel> {
+    async reconnect(newSocketId: string, oldSocketId: string): Promise<RoomDataModel | null> {
         const result = await this._findOneAndUpdate(
             { "members.socketId": oldSocketId },
             { $set: { "members.$.connected": true, "members.$.socketId": newSocketId } },
         );
 
+        if (!result) return null;
+
         return mapRoomToRoomData(result, newSocketId);
     }
 
-    async leave(socketId: string, input: LeaveRoomInput): Promise<RoomDataModel> {
+    async leave(socketId: string, input: LeaveRoomInput): Promise<RoomDataModel | null> {
         const room = await this.getByCode(input.roomCode);
         if (!room) throw new UserException("Room not found");
 
@@ -148,10 +154,12 @@ export class RoomsService {
             { $pull: { members: { socketId: socketId } } },
         );
 
+        if (!result) return null;
+
         return mapRoomToRoomData(result, socketId);
     }
 
-    async kick(socketId: string, input: KickUserInput): Promise<RoomDataModel> {
+    async kick(socketId: string, input: KickUserInput): Promise<KickedRoomDataModel | null> {
         const { memberId, roomCode, secret } = input;
 
         const room = await this.getByCode(roomCode);
@@ -162,17 +170,17 @@ export class RoomsService {
 
         const host = this.getRoomHost(room);
 
-        if (host.socketId !== socketId) {
+        if (host?.socketId !== socketId) {
             throw new UserException("Member is not host of room");
         }
 
-        const member = room.members.find((member) => member._id.toHexString() === memberId);
+        const kickedMember = room.members.find((member) => member._id.toHexString() === memberId);
 
-        if (!member) {
+        if (!kickedMember) {
             throw new UserException("Member does not exist in room");
         }
 
-        if (socketId.toLowerCase() === member.socketId.toLowerCase()) {
+        if (socketId.toLowerCase() === kickedMember.socketId.toLowerCase()) {
             throw new UserException("Cannot kick self from room");
         }
 
@@ -182,13 +190,15 @@ export class RoomsService {
                 secret,
                 members: { $elemMatch: { socketId: socketId, isHost: true } },
             },
-            { $pull: { members: { socketId: member.socketId } } },
+            { $pull: { members: { socketId: kickedMember.socketId } } },
         );
 
-        return mapRoomToRoomData(result, socketId, member);
+        if (!result) return null;
+
+        return { kickedMember, ...mapRoomToRoomData(result, socketId) };
     }
 
-    async updateHost(socketId: string, input: UpdateHostInput): Promise<RoomDataModel> {
+    async updateHost(socketId: string, input: UpdateHostInput): Promise<RoomDataModel | null> {
         const { memberId, roomCode, secret } = input;
 
         const room = await this.getByCode(roomCode);
@@ -199,7 +209,7 @@ export class RoomsService {
 
         const host = this.getRoomHost(room);
 
-        if (host.socketId !== socketId) {
+        if (host?.socketId !== socketId) {
             throw new UserException("Member is not host of room");
         }
 
@@ -232,10 +242,12 @@ export class RoomsService {
             },
         );
 
+        if (!result) return null;
+
         return mapRoomToRoomData(result, socketId);
     }
 
-    async lock(socketId: string, input: LockRoomInput): Promise<RoomDataModel> {
+    async lock(socketId: string, input: LockRoomInput): Promise<RoomDataModel | null> {
         const { roomCode, secret } = input;
 
         const result = await this._findOneAndUpdate(
@@ -247,14 +259,20 @@ export class RoomsService {
             [{ $set: { isLocked: { $not: "$isLocked" } } }],
         );
 
+        if (!result) return null;
+
         return mapRoomToRoomData(result, socketId);
     }
 
-    private _findOne(conditions: unknown) {
+    private _findOne(conditions: QueryFilter<Room>): Promise<Room | null> {
         return this.roomModel.findOne(conditions).exec();
     }
 
-    private _findOneAndUpdate(conditions, update, options = {}) {
+    private _findOneAndUpdate(
+        conditions: QueryFilter<Room>,
+        update: UpdateQuery<Room>,
+        options = {},
+    ): Promise<Room | null> {
         return this.roomModel.findOneAndUpdate(conditions, update, { new: true, ...options });
     }
 }
