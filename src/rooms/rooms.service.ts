@@ -82,12 +82,7 @@ export class RoomsService {
             socketId: undefined,
         });
 
-        await this._findOneAndUpdate(
-            { _id: room.id },
-            {
-                $push: { members: member },
-            },
-        );
+        await this._findOneAndUpdate({ _id: room._id }, { $push: { members: member } });
 
         return member;
     }
@@ -101,12 +96,7 @@ export class RoomsService {
 
         const result = await this._findOneAndUpdate(
             { code: roomCode, "members._id": new mongoose.Types.ObjectId(memberId) },
-            {
-                $set: {
-                    "members.$.connected": true,
-                    "members.$.socketId": socketId,
-                },
-            },
+            { $set: { "members.$.connected": true, "members.$.socketId": socketId } },
         );
 
         return mapRoomToRoomData(result, socketId);
@@ -125,15 +115,8 @@ export class RoomsService {
 
     async reconnect(newSocketId: string, oldSocketId: string): Promise<RoomDataModel> {
         const result = await this._findOneAndUpdate(
-            {
-                "members.socketId": oldSocketId,
-            },
-            {
-                $set: {
-                    "members.$.connected": true,
-                    "members.$.socketId": newSocketId,
-                },
-            },
+            { "members.socketId": oldSocketId },
+            { $set: { "members.$.connected": true, "members.$.socketId": newSocketId } },
         );
 
         return mapRoomToRoomData(result, newSocketId);
@@ -156,24 +139,13 @@ export class RoomsService {
 
             await this._findOneAndUpdate(
                 { code: input.roomCode, "members.socketId": nextHost.socketId },
-                {
-                    $set: {
-                        "members.$.isHost": true,
-                        secret: nanoid(),
-                    },
-                },
+                { $set: { "members.$.isHost": true, secret: nanoid() } },
             );
         }
 
         const result = await this._findOneAndUpdate(
             { code: input.roomCode },
-            {
-                $pull: {
-                    members: {
-                        socketId: socketId,
-                    },
-                },
-            },
+            { $pull: { members: { socketId: socketId } } },
         );
 
         return mapRoomToRoomData(result, socketId);
@@ -208,20 +180,9 @@ export class RoomsService {
             {
                 code: roomCode,
                 secret,
-                members: {
-                    $elemMatch: {
-                        socketId: socketId,
-                        isHost: true,
-                    },
-                },
+                members: { $elemMatch: { socketId: socketId, isHost: true } },
             },
-            {
-                $pull: {
-                    members: {
-                        socketId: member.socketId,
-                    },
-                },
-            },
+            { $pull: { members: { socketId: member.socketId } } },
         );
 
         return mapRoomToRoomData(result, socketId, member);
@@ -255,21 +216,13 @@ export class RoomsService {
         const result = await this._findOneAndUpdate(
             {
                 code: roomCode,
-                members: {
-                    $elemMatch: {
-                        socketId: socketId,
-                        isHost: true,
-                    },
-                },
+                members: { $elemMatch: { socketId: socketId, isHost: true } },
                 secret,
                 "members.socketId": { $in: [socketId, member.socketId] },
             },
             {
                 secret: nanoid(),
-                $set: {
-                    "members.$[element1].isHost": false,
-                    "members.$[element2].isHost": true,
-                },
+                $set: { "members.$[element1].isHost": false, "members.$[element2].isHost": true },
             },
             {
                 arrayFilters: [
@@ -288,12 +241,7 @@ export class RoomsService {
         const result = await this._findOneAndUpdate(
             {
                 code: roomCode,
-                members: {
-                    $elemMatch: {
-                        socketId: socketId,
-                        isHost: true,
-                    },
-                },
+                members: { $elemMatch: { socketId: socketId, isHost: true } },
                 secret,
             },
             [{ $set: { isLocked: { $not: "$isLocked" } } }],

@@ -1,5 +1,4 @@
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const Filter = require("bad-words");
+import Filter from "bad-words";
 import { customAlphabet } from "nanoid";
 
 import { ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH } from "./constants";
