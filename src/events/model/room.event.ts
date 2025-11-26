@@ -1,71 +1,62 @@
-import type { RoomDtoModel } from "../../rooms/model/dto/room-dto.model";
-
-export type GatewayEvent =
-    | RoomErrorEvent
-    | RoomExitedEvent
-    | RoomHostChangeEvent
-    | RoomUpdatedEvent;
-
-export enum RoomEvent {
-    HostChange = "room/host_change",
-    Joined = "room/joined",
-    Updated = "room/updated",
-    Exited = "room/exited",
-    Error = "room/error",
+import type { RoomStoreModel } from "../../rooms/model/store/room-store.model";
+import type { UserStoreModel } from "../../rooms/model/store/user-store.model";
+export interface GatewayEvents {
+    "error:room": RoomErrorEvent;
+    "error:user": UserErrorEvent;
+    "room:closed": RoomClosedEvent;
+    "room:host_updated": RoomHostUpdatedEvent;
+    "room:lock_toggled": RoomLockToggledEvent;
+    "room:state": RoomStateEvent;
+    "user:connected": UserConnectionChangedEvent;
+    "user:disconnected": UserConnectionChangedEvent;
+    "user:kicked": null;
+    "user:left": UserLeftEvent;
 }
 
 export enum RoomErrorCode {
     AlreadyHost = "ALREADY_HOST",
     CannotKickSelf = "CANNOT_KICK_SELF",
-    ConnectionFailed = "CONNECTION_FAILED",
-    InvalidSocketId = "INVALID_SOCKET_ID",
-    KickFailed = "KICK_FAILED",
-    LockFailed = "LOCK_FAILED",
-    MemberNotFound = "MEMBER_NOT_FOUND",
-    NoHost = "NO_HOST",
+    UserNotFound = "MEMBER_NOT_FOUND",
     NotHost = "NOT_HOST",
-    ReconnectFailed = "RECONNECT_FAILED",
     RoomFull = "ROOM_FULL",
     RoomLocked = "ROOM_LOCKED",
     RoomNotFound = "ROOM_NOT_FOUND",
     UnknownError = "UNKNOWN_ERROR",
-    UpdateHostFailed = "UPDATE_HOST_FAILED",
 }
 
-export enum RoomExitReason {
-    Disconnected = "disconnected",
-    Kicked = "kicked",
-    Left = "left",
-}
+enum UserErrorCode {}
 
 export interface RoomErrorEvent {
-    opCode: RoomEvent.Error;
-    roomCode?: string;
-    data: {
-        code: RoomErrorCode;
-        message: string;
-    };
+    code: RoomErrorCode;
+    message: string;
+}
+interface UserErrorEvent {
+    code: UserErrorCode;
+    message: string;
 }
 
-export interface RoomUpdatedEvent {
-    opCode: RoomEvent.Updated;
-    roomCode: string;
-    data: {
-        room: RoomDtoModel;
-    };
-}
-export interface RoomExitedEvent {
-    opCode: RoomEvent.Exited;
-    roomCode: string;
-    data: {
-        reason: RoomExitReason;
-    };
+interface RoomClosedEvent {
+    reason: "HOST_CLOSED" | "HOST_LEFT";
 }
 
-export interface RoomHostChangeEvent {
-    opCode: RoomEvent.HostChange;
-    roomCode: string;
-    data: {
-        secret?: string;
-    };
+interface RoomHostUpdatedEvent {
+    hostId: string;
+}
+
+interface RoomLockToggledEvent {
+    isLocked: boolean;
+}
+
+interface UserConnectionChangedEvent {
+    user: UserStoreModel;
+}
+
+interface UserLeftEvent {
+    userId: string;
+    reason: "KICKED" | "LEFT";
+}
+
+interface RoomStateEvent {
+    room: RoomStoreModel;
+    users: UserStoreModel[];
 }

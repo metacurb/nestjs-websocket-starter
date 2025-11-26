@@ -5,45 +5,59 @@ import {
     HttpCode,
     Param,
     Post,
+    Req,
     UseFilters,
+    UseGuards,
     UsePipes,
     ValidationPipe,
 } from "@nestjs/common";
-import { from, map, Observable } from "rxjs";
-import { HttpDomainExceptionFilter } from "src/filters/http-exception.filter";
+import { Request } from "express";
+import { PinoLogger } from "nestjs-pino";
+import { from, Observable } from "rxjs";
 
-import { CreateRoomInput } from "./model/dto/create-room.input";
-import { JoinRoomInput } from "./model/dto/join-room.input";
-import type { JoinedRoomDtoModel } from "./model/dto/joined-room-dto.model";
-import { RoomDtoModel } from "./model/dto/room-dto.model";
+import { JwtAuthGuard } from "../auth/jwt-auth.guard";
+import { HttpDomainExceptionFilter } from "../filters/http-exception.filter";
+import type { RoomSessionDtoModel } from "./model/dto/room-session-dto.model";
+import { CreateRoomInput } from "./model/input/create-room.input";
+import { JoinRoomInput } from "./model/input/join-room.input";
+import { RoomStoreModel } from "./model/store/room-store.model";
 import { RoomsService } from "./rooms.service";
-import { mapRoomToDto } from "./util/map-room-to-dto";
-import { mapRoomToJoinedRoomDtoModel } from "./util/map-room-to-joined-room-dto.model";
-@UsePipes(new ValidationPipe())
+@UsePipes(new ValidationPipe({ forbidNonWhitelisted: true, whitelist: true }))
 @UseFilters(HttpDomainExceptionFilter)
 @Controller("rooms")
 export class RoomsController {
-    constructor(private readonly roomsService: RoomsService) {}
+    constructor(
+        private readonly logger: PinoLogger,
+        private readonly roomsService: RoomsService,
+    ) {
+        this.logger.setContext(this.constructor.name);
+    }
 
     @HttpCode(201)
     @Post()
-    create(@Body() body: CreateRoomInput): Observable<JoinedRoomDtoModel> {
-        return from(this.roomsService.create(body)).pipe(
-            map((room) => mapRoomToJoinedRoomDtoModel(room, room.members[0])),
-        );
+    create(@Body() body: CreateRoomInput): Observable<RoomSessionDtoModel> {
+        return from(this.roomsService.create(body));
     }
 
     @HttpCode(200)
     @Post(":code/join")
-    join(@Body() body: JoinRoomInput, @Param("code") code: string): Observable<JoinedRoomDtoModel> {
-        return from(this.roomsService.join(code, body)).pipe(
-            map((result) => mapRoomToJoinedRoomDtoModel(result.room, result.me)),
-        );
+    join(
+        @Body() body: JoinRoomInput,
+        @Param("code") code: string,
+    ): Observable<RoomSessionDtoModel> {
+        return from(this.roomsService.join(code, body.displayName));
+    }
+
+    @UseGuards(JwtAuthGuard)
+    @HttpCode(200)
+    @Post(":code/rejoin")
+    rejoin(@Req() req: Request, @Param("code") code: string): Observable<RoomSessionDtoModel> {
+        return from(this.roomsService.rejoin(code, req.user!.userId));
     }
 
     @HttpCode(200)
     @Get(":code")
-    get(@Param("code") code: string): Observable<RoomDtoModel> {
-        return from(this.roomsService.getByCode(code)).pipe(map((room) => mapRoomToDto(room)));
+    get(@Param("code") code: string): Observable<RoomStoreModel> {
+        return from(this.roomsService.getByCode(code));
     }
 }

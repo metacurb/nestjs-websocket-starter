@@ -8,14 +8,14 @@ import {
 
 import {
     InvalidOperationException,
-    MemberNotFoundException,
     RoomNotFoundException,
     UnauthorizedHostActionException,
+    UserNotFoundException,
 } from "../common/exceptions/room.exceptions";
 
 const DOMAIN_EXCEPTIONS = [
     RoomNotFoundException,
-    MemberNotFoundException,
+    UserNotFoundException,
     UnauthorizedHostActionException,
     InvalidOperationException,
 ];
@@ -31,7 +31,7 @@ export class HttpDomainExceptionFilter implements ExceptionFilter {
     private mapToHttpException(exception: DomainException) {
         if (
             exception instanceof RoomNotFoundException ||
-            exception instanceof MemberNotFoundException
+            exception instanceof UserNotFoundException
         ) {
             return new NotFoundException(exception.message);
         }

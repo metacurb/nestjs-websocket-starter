@@ -1,57 +1,49 @@
 import type { DeepMocked } from "@golevelup/ts-jest";
 import { createMock } from "@golevelup/ts-jest";
+import { UnauthorizedException } from "@nestjs/common";
 import type { TestingModule } from "@nestjs/testing";
 import { Test } from "@nestjs/testing";
 import { PinoLogger } from "nestjs-pino";
 import type { Server, Socket } from "socket.io";
 
-import type { KickedRoomDataModel } from "../rooms/model/kicked-room-data.model";
-import type { RoomDataModel } from "../rooms/model/room-data.model";
+import { EventsAuthService } from "../auth/events-auth.service";
+import type { RoomStoreModel } from "../rooms/model/store/room-store.model";
+import type { UserStoreModel } from "../rooms/model/store/user-store.model";
 import { RoomsService } from "../rooms/rooms.service";
-import type { MemberDocument } from "../rooms/schema/member.schema";
-import type { Room } from "../rooms/schema/room.schema";
 import { EventsGateway } from "./events.gateway";
-import type { RoomErrorEvent, RoomExitedEvent, RoomUpdatedEvent } from "./model/room.event";
-import { RoomErrorCode, RoomEvent, RoomExitReason } from "./model/room.event";
 
 describe("EventsGateway", () => {
     let gateway: EventsGateway;
     let roomsService: DeepMocked<RoomsService>;
+    let eventsAuthService: DeepMocked<EventsAuthService>;
     let mockSocket: DeepMocked<Socket>;
     let mockServer: DeepMocked<Server>;
 
-    const createMockMember = (overrides: Partial<MemberDocument> = {}): MemberDocument =>
-        ({
-            _id: { toHexString: () => "member-id-123" },
-            connected: true,
-            isHost: false,
-            name: "Test User",
-            socketId: "socket-123",
-            ...overrides,
-        }) as unknown as MemberDocument;
+    const createMockUser = (overrides: Partial<UserStoreModel> = {}): UserStoreModel => ({
+        displayName: "Test UserStoreModel",
+        id: "user-123",
+        isConnected: true,
+        roomCode: "ABCD12",
+        socketId: "socket-123",
+        ...overrides,
+    });
 
-    const createMockRoom = (overrides: Partial<Room> = {}): Room =>
-        ({
-            code: "ABCD12",
-            isLocked: false,
-            maxMembers: 10,
-            members: [createMockMember({ isHost: true })],
-            secret: "secret-123",
-            state: "CREATED",
-            ...overrides,
-        }) as Room;
-
-    const createRoomDataModel = (overrides: Partial<RoomDataModel> = {}): RoomDataModel => ({
-        host: createMockMember({ isHost: true }),
-        me: createMockMember(),
-        room: createMockRoom(),
+    const createMockRoom = (overrides: Partial<RoomStoreModel> = {}): RoomStoreModel => ({
+        code: "ABCD12",
+        hostId: "user-123",
+        isLocked: false,
+        maxUsers: 10,
+        state: "CREATED",
+        createdAt: new Date(),
+        updatedAt: new Date(),
         ...overrides,
     });
 
     beforeEach(async () => {
         mockSocket = createMock<Socket>({
             id: "socket-123",
-            broadcast: { to: jest.fn(), emit: jest.fn() },
+            data: { userId: "user-123", roomCode: "ABCD12" },
+            handshake: { auth: { token: "valid-token" } },
         });
         mockServer = createMock<Server>();
 
@@ -66,237 +58,246 @@ describe("EventsGateway", () => {
                     provide: RoomsService,
                     useValue: createMock<RoomsService>(),
                 },
+                {
+                    provide: EventsAuthService,
+                    useValue: createMock<EventsAuthService>(),
+                },
             ],
         }).compile();
 
         gateway = module.get<EventsGateway>(EventsGateway);
         roomsService = module.get(RoomsService);
+        eventsAuthService = module.get(EventsAuthService);
 
         gateway.server = mockServer;
 
-        (mockSocket.broadcast.to as jest.Mock).mockReturnThis();
         mockSocket.join.mockResolvedValue(undefined);
-        mockSocket.leave.mockResolvedValue(undefined);
-
         mockServer.to.mockReturnThis();
-        mockServer.in.mockReturnValue({
-            socketsLeave: jest.fn().mockResolvedValue(undefined),
-        } as never);
     });
 
     afterEach(() => {
         jest.clearAllMocks();
     });
 
-    describe("onJoin", () => {
-        test("should connect to room and broadcast update to other members", async () => {
-            const input = { memberId: "member-id-123", roomCode: "ABCD12" };
-            const roomData = createRoomDataModel();
-            roomsService.connect.mockResolvedValue(roomData);
-
-            const result = await gateway.onJoin(mockSocket, input);
-
-            expect(roomsService.connect).toHaveBeenCalledWith("socket-123", input);
-            expect(mockSocket.join).toHaveBeenCalledWith("ABCD12");
-            expect(mockSocket.broadcast.to).toHaveBeenCalledWith("ABCD12");
-            expect(result.opCode).toBe(RoomEvent.Updated);
-        });
-
-        test("should include secret in response for host", async () => {
-            const hostMember = createMockMember({ isHost: true, socketId: "socket-123" });
-            const roomData = createRoomDataModel({ me: hostMember });
-            roomsService.connect.mockResolvedValue(roomData);
-
-            const result = await gateway.onJoin(mockSocket, {
-                memberId: "member-id-123",
-                roomCode: "ABCD12",
-            });
-
-            expect(result.opCode).toBe(RoomEvent.Updated);
-            expect((result as RoomUpdatedEvent).data.room.secret).toBe("secret-123");
-        });
-    });
-
-    describe("onLeave", () => {
-        test("should handle leave and broadcast update", async () => {
-            const input = { roomCode: "ABCD12" };
-            const roomData = createRoomDataModel();
-            roomsService.leave.mockResolvedValue(roomData);
-
-            const result = await gateway.onLeave(mockSocket, input);
-
-            expect(roomsService.leave).toHaveBeenCalledWith("socket-123", input);
-            expect(mockSocket.leave).toHaveBeenCalledWith("ABCD12");
-            expect(result.opCode).toBe(RoomEvent.Exited);
-            expect((result as RoomExitedEvent).data.reason).toBe(RoomExitReason.Left);
-        });
-
-        test("should handle last member leaving and clean up room", async () => {
-            const input = { roomCode: "ABCD12" };
-            roomsService.leave.mockResolvedValue(null);
-
-            const result = await gateway.onLeave(mockSocket, input);
-
-            expect(mockServer.in).toHaveBeenCalledWith("ABCD12");
-            expect(result.opCode).toBe(RoomEvent.Exited);
-        });
-
-        test("should notify new host when host leaves", async () => {
-            const newHost = createMockMember({ isHost: true, socketId: "new-host-socket" });
-            const room = createMockRoom({ secret: "new-secret" });
-            const roomData = createRoomDataModel({ host: newHost, room });
-            roomsService.leave.mockResolvedValue(roomData);
-
-            await gateway.onLeave(mockSocket, { roomCode: "ABCD12" });
-
-            expect(mockServer.to).toHaveBeenCalledWith("new-host-socket");
-        });
-    });
-
     describe("onKick", () => {
-        test("should kick member and broadcast update", async () => {
-            const input = { memberId: "kicked-member-id", roomCode: "ABCD12", secret: "secret" };
-            const kickedMember = createMockMember({ socketId: "kicked-socket" });
-            const kickResult: KickedRoomDataModel = {
-                ...createRoomDataModel(),
-                kickedMember,
-            };
-            roomsService.kick.mockResolvedValue(kickResult);
+        test("should kick user, emit kicked event, and disconnect socket", async () => {
+            const input = { kickUserId: "kicked-user-id" };
+            roomsService.kick.mockResolvedValue({ kickedSocketId: "kicked-socket-id" });
 
-            const result = await gateway.onKick(mockSocket, input);
+            await gateway.onKick(mockSocket, input);
 
-            expect(roomsService.kick).toHaveBeenCalledWith("socket-123", input);
-            expect(mockServer.to).toHaveBeenCalledWith("kicked-socket");
-            expect(mockServer.in).toHaveBeenCalledWith("kicked-socket");
-            expect(result.opCode).toBe(RoomEvent.Updated);
+            expect(roomsService.kick).toHaveBeenCalledWith("user-123", "ABCD12", "kicked-user-id");
+            expect(mockServer.to).toHaveBeenCalledWith("kicked-socket-id");
+            expect(mockServer.emit).toHaveBeenCalledWith("user:kicked", null);
+            expect(mockServer.to).toHaveBeenCalledWith("ABCD12");
+            expect(mockServer.emit).toHaveBeenCalledWith("user:left", {
+                reason: "KICKED",
+                userId: "kicked-user-id",
+            });
         });
 
-        test("should return error when kick fails", async () => {
-            const input = { memberId: "member-id", roomCode: "ABCD12", secret: "secret" };
-            roomsService.kick.mockResolvedValue(null as unknown as KickedRoomDataModel);
+        test("should not emit to kicked socket when socketId is null", async () => {
+            const input = { kickUserId: "kicked-user-id" };
+            roomsService.kick.mockResolvedValue({ kickedSocketId: null });
 
-            const result = await gateway.onKick(mockSocket, input);
+            await gateway.onKick(mockSocket, input);
 
-            expect(result.opCode).toBe(RoomEvent.Error);
-            expect((result as RoomErrorEvent).data.code).toBe(RoomErrorCode.KickFailed);
-        });
-
-        test("should return error when room was deleted during kick", async () => {
-            const input = { memberId: "member-id", roomCode: "ABCD12", secret: "secret" };
-            roomsService.kick.mockResolvedValue({
-                kickedMember: createMockMember(),
-                room: null,
-            } as unknown as KickedRoomDataModel);
-
-            const result = await gateway.onKick(mockSocket, input);
-
-            expect(result.opCode).toBe(RoomEvent.Error);
-            expect((result as RoomErrorEvent).data.code).toBe(RoomErrorCode.RoomNotFound);
-        });
-    });
-
-    describe("onReconnect", () => {
-        test("should reconnect and broadcast update", async () => {
-            const oldSocketId = "old-socket-123";
-            const roomData = createRoomDataModel();
-            roomsService.reconnect.mockResolvedValue(roomData);
-
-            const result = await gateway.onReconnect(mockSocket, oldSocketId);
-
-            expect(roomsService.reconnect).toHaveBeenCalledWith("socket-123", oldSocketId);
-            expect(mockSocket.join).toHaveBeenCalledWith("ABCD12");
-            expect(result.opCode).toBe(RoomEvent.Updated);
-        });
-
-        test("should return error when reconnect fails", async () => {
-            roomsService.reconnect.mockResolvedValue(null as unknown as RoomDataModel);
-
-            const result = await gateway.onReconnect(mockSocket, "old-socket");
-
-            expect(result.opCode).toBe(RoomEvent.Error);
-            expect((result as RoomErrorEvent).data.code).toBe(RoomErrorCode.ReconnectFailed);
-        });
-
-        test("should include secret for reconnecting host", async () => {
-            const hostMember = createMockMember({ isHost: true, socketId: "socket-123" });
-            const roomData = createRoomDataModel({ host: hostMember });
-            roomsService.reconnect.mockResolvedValue(roomData);
-
-            const result = await gateway.onReconnect(mockSocket, "old-socket");
-
-            expect(result.opCode).toBe(RoomEvent.Updated);
-            expect((result as RoomUpdatedEvent).data.room.secret).toBe("secret-123");
+            expect(mockServer.to).not.toHaveBeenCalledWith(null);
+            expect(mockServer.to).toHaveBeenCalledWith("ABCD12");
         });
     });
 
     describe("onUpdateHost", () => {
-        test("should update host and notify new host", async () => {
-            const input = { memberId: "new-host-id", roomCode: "ABCD12", secret: "secret" };
-            const newHost = createMockMember({ isHost: true, socketId: "new-host-socket" });
-            const roomData = createRoomDataModel({ host: newHost });
-            roomsService.updateHost.mockResolvedValue(roomData);
+        test("should update host and emit room:host_updated", async () => {
+            const input = { newHostId: "new-host-id" };
+            const updatedRoom = createMockRoom({ hostId: "new-host-id" });
+            roomsService.updateHost.mockResolvedValue(updatedRoom);
 
-            const result = await gateway.onUpdateHost(mockSocket, input);
+            await gateway.onUpdateHost(mockSocket, input);
 
-            expect(roomsService.updateHost).toHaveBeenCalledWith("socket-123", input);
-            expect(mockServer.to).toHaveBeenCalledWith("new-host-socket");
-            expect(result.opCode).toBe(RoomEvent.Updated);
-        });
-
-        test("should return error when update host fails", async () => {
-            const input = { memberId: "member-id", roomCode: "ABCD12", secret: "secret" };
-            roomsService.updateHost.mockResolvedValue(null as unknown as RoomDataModel);
-
-            const result = await gateway.onUpdateHost(mockSocket, input);
-
-            expect(result.opCode).toBe(RoomEvent.Error);
-            expect((result as RoomErrorEvent).data.code).toBe(RoomErrorCode.UpdateHostFailed);
+            expect(roomsService.updateHost).toHaveBeenCalledWith(
+                "user-123",
+                "ABCD12",
+                "new-host-id",
+            );
+            expect(mockServer.to).toHaveBeenCalledWith("ABCD12");
+            expect(mockServer.emit).toHaveBeenCalledWith("room:host_updated", {
+                hostId: "new-host-id",
+            });
         });
     });
 
-    describe("onLock", () => {
-        test("should toggle lock and broadcast update", async () => {
-            const input = { roomCode: "ABCD12", secret: "secret" };
-            const roomData = createRoomDataModel();
-            roomsService.lock.mockResolvedValue(roomData);
+    describe("onToggleLock", () => {
+        test("should toggle lock and emit room:locked with isLocked true", async () => {
+            const updatedRoom = createMockRoom({ isLocked: true });
+            roomsService.toggleLock.mockResolvedValue(updatedRoom);
 
-            const result = await gateway.onLock(mockSocket, input);
+            await gateway.onToggleLock(mockSocket);
 
-            expect(roomsService.lock).toHaveBeenCalledWith("socket-123", input);
-            expect(mockSocket.broadcast.to).toHaveBeenCalledWith("ABCD12");
-            expect(result.opCode).toBe(RoomEvent.Updated);
+            expect(roomsService.toggleLock).toHaveBeenCalledWith("user-123", "ABCD12");
+            expect(mockServer.to).toHaveBeenCalledWith("ABCD12");
+            expect(mockServer.emit).toHaveBeenCalledWith("room:lock_toggled", { isLocked: true });
         });
 
-        test("should return error when lock fails", async () => {
-            const input = { roomCode: "ABCD12", secret: "secret" };
-            roomsService.lock.mockResolvedValue(null as unknown as RoomDataModel);
+        test("should toggle lock and emit room:locked with isLocked false", async () => {
+            const updatedRoom = createMockRoom({ isLocked: false });
+            roomsService.toggleLock.mockResolvedValue(updatedRoom);
 
-            const result = await gateway.onLock(mockSocket, input);
+            await gateway.onToggleLock(mockSocket);
 
-            expect(result.opCode).toBe(RoomEvent.Error);
-            expect((result as RoomErrorEvent).data.code).toBe(RoomErrorCode.LockFailed);
+            expect(roomsService.toggleLock).toHaveBeenCalledWith("user-123", "ABCD12");
+            expect(mockServer.to).toHaveBeenCalledWith("ABCD12");
+            expect(mockServer.emit).toHaveBeenCalledWith("room:lock_toggled", { isLocked: false });
+        });
+    });
+
+    describe("onLeave", () => {
+        test("should leave room, disconnect user, and emit user:left", async () => {
+            roomsService.leave.mockResolvedValue(undefined);
+
+            await gateway.onLeave(mockSocket);
+
+            expect(roomsService.leave).toHaveBeenCalledWith("ABCD12", "user-123");
+            expect(mockServer.to).toHaveBeenCalledWith("socket-123");
+            expect(mockServer.disconnectSockets).toHaveBeenCalledWith(true);
+            expect(mockServer.to).toHaveBeenCalledWith("ABCD12");
+            expect(mockServer.emit).toHaveBeenCalledWith("user:left", {
+                reason: "LEFT",
+                userId: "user-123",
+            });
+        });
+    });
+
+    describe("handleConnection", () => {
+        test("should authenticate, join room, emit room:state to user, and emit user:connected to room", async () => {
+            const payload = { userId: "user-123", roomCode: "ABCD12" };
+            const user = createMockUser();
+            const updatedUser = createMockUser({ socketId: "socket-123", isConnected: true });
+            const room = createMockRoom();
+            const existingUsers = [createMockUser({ id: "other-user", displayName: "Other User" })];
+
+            eventsAuthService.verifyToken.mockReturnValue(payload);
+            roomsService.getRoomMember.mockResolvedValue(user);
+            roomsService.updateConnectedUser.mockResolvedValue(updatedUser);
+            roomsService.getByCode.mockResolvedValue(room);
+            roomsService.getRoomMembersWithDetails.mockResolvedValue(existingUsers);
+
+            await gateway.handleConnection(mockSocket);
+
+            expect(eventsAuthService.verifyToken).toHaveBeenCalledWith("valid-token");
+            expect(roomsService.getRoomMember).toHaveBeenCalledWith("user-123");
+            expect(mockSocket.data.userId).toBe("user-123");
+            expect(mockSocket.data.roomCode).toBe("ABCD12");
+            expect(roomsService.updateConnectedUser).toHaveBeenCalledWith("user-123", "socket-123");
+            expect(roomsService.getByCode).toHaveBeenCalledWith("ABCD12");
+            expect(roomsService.getRoomMembersWithDetails).toHaveBeenCalledWith("ABCD12");
+            expect(mockSocket.join).toHaveBeenCalledWith("ABCD12");
+            expect(mockServer.to).toHaveBeenCalledWith("socket-123");
+            expect(mockServer.emit).toHaveBeenCalledWith("room:state", {
+                room,
+                users: existingUsers,
+            });
+            expect(mockServer.to).toHaveBeenCalledWith("ABCD12");
+            expect(mockServer.emit).toHaveBeenCalledWith("user:connected", { user: updatedUser });
+        });
+
+        test("should disconnect socket when user not found", async () => {
+            const payload = { userId: "user-123", roomCode: "ABCD12" };
+
+            eventsAuthService.verifyToken.mockReturnValue(payload);
+            roomsService.getRoomMember.mockResolvedValue(null as unknown as UserStoreModel);
+
+            await gateway.handleConnection(mockSocket);
+
+            expect(mockSocket.disconnect).toHaveBeenCalledWith(true);
+            expect(mockSocket.join).not.toHaveBeenCalled();
+        });
+
+        test("should disconnect socket when token verification fails", async () => {
+            eventsAuthService.verifyToken.mockImplementation(() => {
+                throw new UnauthorizedException("Invalid token");
+            });
+
+            await gateway.handleConnection(mockSocket);
+
+            expect(mockSocket.disconnect).toHaveBeenCalledWith(true);
+            expect(mockSocket.join).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("onCloseRoom", () => {
+        test("should close room, emit to all sockets, and disconnect them", async () => {
+            const mockRemoteSocket1 = createMock<Socket>({ id: "socket-1" });
+            const mockRemoteSocket2 = createMock<Socket>({ id: "socket-2" });
+            roomsService.close.mockResolvedValue(undefined);
+            mockServer.in.mockReturnValue({
+                fetchSockets: jest.fn().mockResolvedValue([mockRemoteSocket1, mockRemoteSocket2]),
+            } as never);
+
+            await gateway.onCloseRoom(mockSocket);
+
+            expect(roomsService.close).toHaveBeenCalledWith("user-123", "ABCD12");
+            expect(mockServer.to).toHaveBeenCalledWith("ABCD12");
+            expect(mockServer.emit).toHaveBeenCalledWith("room:closed", { reason: "HOST_CLOSED" });
+            expect(mockServer.in).toHaveBeenCalledWith("ABCD12");
+            expect(mockRemoteSocket1.leave).toHaveBeenCalledWith("ABCD12");
+            expect(mockRemoteSocket1.emit).toHaveBeenCalledWith("room:closed", {
+                reason: "HOST_CLOSED",
+            });
+            expect(mockRemoteSocket1.disconnect).toHaveBeenCalledWith(true);
+            expect(mockRemoteSocket2.leave).toHaveBeenCalledWith("ABCD12");
+            expect(mockRemoteSocket2.disconnect).toHaveBeenCalledWith(true);
+        });
+
+        test("should handle room with no connected sockets", async () => {
+            roomsService.close.mockResolvedValue(undefined);
+            mockServer.in.mockReturnValue({
+                fetchSockets: jest.fn().mockResolvedValue([]),
+            } as never);
+
+            await gateway.onCloseRoom(mockSocket);
+
+            expect(roomsService.close).toHaveBeenCalledWith("user-123", "ABCD12");
+            expect(mockServer.to).toHaveBeenCalledWith("ABCD12");
         });
     });
 
     describe("handleDisconnect", () => {
-        test("should handle disconnect and broadcast update", async () => {
-            const roomData = createRoomDataModel();
-            roomsService.disconnect.mockResolvedValue(roomData);
+        test("should update user and emit user:disconnected", async () => {
+            const updatedUser = createMockUser({ isConnected: false, socketId: null });
+            roomsService.updateDisconnectedUser.mockResolvedValue(updatedUser);
 
-            const result = await gateway.handleDisconnect(mockSocket);
+            await gateway.handleDisconnect(mockSocket);
 
-            expect(roomsService.disconnect).toHaveBeenCalledWith("socket-123");
-            expect(mockSocket.broadcast.to).toHaveBeenCalledWith("ABCD12");
-            expect(result?.opCode).toBe(RoomEvent.Exited);
-            expect((result as RoomExitedEvent).data.reason).toBe(RoomExitReason.Disconnected);
+            expect(roomsService.updateDisconnectedUser).toHaveBeenCalledWith("user-123");
+            expect(mockServer.to).toHaveBeenCalledWith("ABCD12");
+            expect(mockServer.emit).toHaveBeenCalledWith("user:disconnected", {
+                user: updatedUser,
+            });
         });
 
-        test("should return null when user was not in any room", async () => {
-            roomsService.disconnect.mockResolvedValue(null as unknown as RoomDataModel);
+        test("should do nothing when socket has no roomCode", async () => {
+            mockSocket.data = { userId: "user-123" };
 
-            const result = await gateway.handleDisconnect(mockSocket);
+            await gateway.handleDisconnect(mockSocket);
 
-            expect(result).toBeNull();
+            expect(roomsService.updateDisconnectedUser).not.toHaveBeenCalled();
+        });
+
+        test("should do nothing when socket has no userId", async () => {
+            mockSocket.data = { roomCode: "ABCD12" };
+
+            await gateway.handleDisconnect(mockSocket);
+
+            expect(roomsService.updateDisconnectedUser).not.toHaveBeenCalled();
+        });
+
+        test("should do nothing when socket.data is undefined", async () => {
+            mockSocket.data = undefined as never;
+
+            await gateway.handleDisconnect(mockSocket);
+
+            expect(roomsService.updateDisconnectedUser).not.toHaveBeenCalled();
         });
     });
 });

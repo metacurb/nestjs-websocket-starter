@@ -1,5 +1,5 @@
 import { UseFilters, UsePipes, ValidationPipe } from "@nestjs/common";
-import type { OnGatewayDisconnect } from "@nestjs/websockets";
+import type { OnGatewayConnection, OnGatewayDisconnect } from "@nestjs/websockets";
 import {
     ConnectedSocket,
     MessageBody,
@@ -9,23 +9,14 @@ import {
 } from "@nestjs/websockets";
 import { PinoLogger } from "nestjs-pino";
 import { Server, Socket } from "socket.io";
-import { WsDomainExceptionFilter } from "src/filters/ws-exception.filter";
 
-import { ConnectToRoomInput } from "../rooms/model/dto/connect-to-room.input";
-import { UpdateHostInput } from "../rooms/model/dto/give-host.input";
-import { KickUserInput } from "../rooms/model/dto/kick-user.input";
-import { LeaveRoomInput } from "../rooms/model/dto/leave-room.input";
-import { LockRoomInput } from "../rooms/model/dto/look-room.input";
+import { EventsAuthService } from "../auth/events-auth.service";
+import { WsDomainExceptionFilter } from "../filters/ws-exception.filter";
+import { KickUserInput } from "../rooms/model/input/kick-user.input";
+import { UpdateHostInput } from "../rooms/model/input/update-host.input";
 import { RoomsService } from "../rooms/rooms.service";
-import { mapRoomToDto } from "../rooms/util/map-room-to-dto";
 import { EventsMessages } from "./model/events.messages";
-import type {
-    GatewayEvent,
-    RoomExitedEvent,
-    RoomHostChangeEvent,
-    RoomUpdatedEvent,
-} from "./model/room.event";
-import { RoomErrorCode, RoomEvent, RoomExitReason } from "./model/room.event";
+import { type GatewayEvents } from "./model/room.event";
 
 @UseFilters(WsDomainExceptionFilter)
 @UsePipes(new ValidationPipe())
@@ -35,108 +26,36 @@ import { RoomErrorCode, RoomEvent, RoomExitReason } from "./model/room.event";
     },
     namespace: "rooms",
 })
-export class EventsGateway implements OnGatewayDisconnect {
+export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @WebSocketServer()
     server: Server;
 
     constructor(
+        private readonly eventsAuthService: EventsAuthService,
         private readonly logger: PinoLogger,
         private readonly roomsService: RoomsService,
     ) {
         this.logger.setContext(this.constructor.name);
     }
 
-    private sendToRoom(socket: Socket, roomId: string, payload: GatewayEvent) {
-        return socket.broadcast.to(roomId).emit("event", payload);
+    private emitToRoom<E extends keyof GatewayEvents>(
+        roomId: string,
+        event: E,
+        payload: GatewayEvents[E],
+    ) {
+        return this.server.to(roomId).emit(event, payload);
     }
 
-    private sendToRoomMember(socketId: string, payload: GatewayEvent) {
-        return this.server.to(socketId).emit("event", payload);
+    private emitToUser<E extends keyof GatewayEvents>(
+        socketId: string,
+        event: E,
+        payload: GatewayEvents[E],
+    ) {
+        return this.server.to(socketId).emit(event, payload);
     }
 
-    @SubscribeMessage(EventsMessages.ConnectToRoom)
-    async onJoin(
-        @ConnectedSocket()
-        socket: Socket,
-        @MessageBody()
-        input: ConnectToRoomInput,
-    ): Promise<GatewayEvent> {
-        const result = await this.roomsService.connect(socket.id, input);
-
-        const { me, room } = result;
-
-        await socket.join(room.code);
-
-        await this.sendToRoom(socket, room.code, {
-            opCode: RoomEvent.Updated,
-            roomCode: room.code,
-            data: {
-                room: mapRoomToDto(room),
-            },
-        });
-
-        const event: RoomUpdatedEvent = {
-            opCode: RoomEvent.Updated,
-            roomCode: room.code,
-            data: {
-                room: mapRoomToDto(room, me.isHost),
-            },
-        };
-
-        return event;
-    }
-
-    @SubscribeMessage(EventsMessages.LeaveRoom)
-    async onLeave(
-        @ConnectedSocket()
-        socket: Socket,
-        @MessageBody()
-        input: LeaveRoomInput,
-    ): Promise<GatewayEvent> {
-        const { roomCode } = input;
-        const result = await this.roomsService.leave(socket.id, input);
-
-        const exitEvent: RoomExitedEvent = {
-            opCode: RoomEvent.Exited,
-            roomCode,
-            data: {
-                reason: RoomExitReason.Left,
-            },
-        };
-
-        if (!result) {
-            this.logger.info({ roomCode }, "socket was last member of room, removing all sockets");
-            await this.sendToRoom(socket, roomCode, exitEvent);
-            await this.server.in(roomCode).socketsLeave(roomCode);
-            return exitEvent;
-        }
-
-        const { host, room } = result;
-
-        const updateEvent: RoomUpdatedEvent = {
-            opCode: RoomEvent.Updated,
-            roomCode,
-            data: {
-                room: mapRoomToDto(room),
-            },
-        };
-
-        if (host.socketId !== socket.id) {
-            const hostChangeEvent: RoomHostChangeEvent = {
-                opCode: RoomEvent.HostChange,
-                roomCode,
-                data: {
-                    secret: result.room.secret,
-                },
-            };
-
-            await this.sendToRoomMember(host.socketId, hostChangeEvent);
-        }
-
-        await socket.leave(roomCode);
-        await this.sendToRoom(socket, room.code, updateEvent);
-
-        return exitEvent;
+    private disconnectUser(socketId: string) {
+        return this.server.to(socketId).disconnectSockets(true);
     }
 
     @SubscribeMessage(EventsMessages.KickFromRoom)
@@ -145,202 +64,128 @@ export class EventsGateway implements OnGatewayDisconnect {
         socket: Socket,
         @MessageBody()
         input: KickUserInput,
-    ): Promise<GatewayEvent> {
-        const result = await this.roomsService.kick(socket.id, input);
+    ) {
+        const { kickedSocketId } = await this.roomsService.kick(
+            socket.data.userId,
+            socket.data.roomCode,
+            input.kickUserId,
+        );
 
-        if (!result) {
-            return {
-                opCode: RoomEvent.Error,
-                roomCode: input.roomCode,
-                data: {
-                    code: RoomErrorCode.KickFailed,
-                    message: "Could not kick member from room",
-                },
-            };
+        if (kickedSocketId) {
+            this.emitToUser(kickedSocketId, "user:kicked", null);
+            this.disconnectUser(kickedSocketId);
         }
 
-        const { kickedMember, room } = result;
-
-        if (!room) {
-            return {
-                opCode: RoomEvent.Error,
-                roomCode: input.roomCode,
-                data: {
-                    code: RoomErrorCode.RoomNotFound,
-                    message: "Room was deleted",
-                },
-            };
-        }
-
-        const update: RoomUpdatedEvent = {
-            opCode: RoomEvent.Updated,
-            roomCode: room.code,
-            data: {
-                room: mapRoomToDto(room),
-            },
-        };
-
-        await this.sendToRoomMember(kickedMember.socketId, {
-            opCode: RoomEvent.Exited,
-            roomCode: room.code,
-            data: {
-                reason: RoomExitReason.Kicked,
-            },
+        this.emitToRoom(socket.data.roomCode, "user:left", {
+            reason: "KICKED",
+            userId: input.kickUserId,
         });
-
-        await this.server.in(kickedMember.socketId).socketsLeave(room.code);
-        await this.sendToRoom(socket, room.code, update);
-
-        return update;
     }
 
-    @SubscribeMessage(EventsMessages.ReconnectToRoom)
-    async onReconnect(
-        @ConnectedSocket()
-        socket: Socket,
-        @MessageBody()
-        oldSocketId: string,
-    ): Promise<GatewayEvent> {
-        const result = await this.roomsService.reconnect(socket.id, oldSocketId);
-
-        if (!result) {
-            return {
-                opCode: RoomEvent.Error,
-                data: {
-                    code: RoomErrorCode.ReconnectFailed,
-                    message: "Could not reconnect to room",
-                },
-            };
-        }
-
-        const { host, room } = result;
-
-        const roomEvent: RoomUpdatedEvent = {
-            opCode: RoomEvent.Updated,
-            roomCode: room.code,
-            data: {
-                room: mapRoomToDto(room),
-            },
-        };
-
-        await socket.join(room.code);
-        await this.sendToRoom(socket, room.code, roomEvent);
-
-        const userEvent: RoomUpdatedEvent = {
-            opCode: RoomEvent.Updated,
-            roomCode: room.code,
-            data: {
-                room: mapRoomToDto(room, host.socketId === socket.id),
-            },
-        };
-
-        return userEvent;
-    }
-
-    @SubscribeMessage(EventsMessages.UpdateHost)
+    @SubscribeMessage(EventsMessages.TransferHost)
     async onUpdateHost(
         @ConnectedSocket()
         socket: Socket,
         @MessageBody()
         input: UpdateHostInput,
-    ): Promise<GatewayEvent> {
-        const result = await this.roomsService.updateHost(socket.id, input);
+    ) {
+        const room = await this.roomsService.updateHost(
+            socket.data.userId,
+            socket.data.roomCode,
+            input.newHostId,
+        );
 
-        if (!result) {
-            return {
-                opCode: RoomEvent.Error,
-                roomCode: input.roomCode,
-                data: {
-                    code: RoomErrorCode.UpdateHostFailed,
-                    message: "Could not update host",
-                },
-            };
-        }
-
-        const { host, room } = result;
-
-        const updateEvent: RoomUpdatedEvent = {
-            opCode: RoomEvent.Updated,
-            roomCode: room.code,
-            data: {
-                room: mapRoomToDto(room),
-            },
-        };
-
-        await this.sendToRoomMember(host.socketId, {
-            opCode: RoomEvent.HostChange,
-            roomCode: room.code,
-            data: {
-                secret: room.secret,
-            },
-        });
-        await this.sendToRoom(socket, room.code, updateEvent);
-
-        return updateEvent;
+        this.emitToRoom(room.code, "room:host_updated", { hostId: room.hostId });
     }
 
-    @SubscribeMessage(EventsMessages.LockRoom)
-    async onLock(
+    @SubscribeMessage(EventsMessages.ToggleLock)
+    async onToggleLock(
         @ConnectedSocket()
         socket: Socket,
-        @MessageBody()
-        input: LockRoomInput,
-    ): Promise<GatewayEvent> {
-        const result = await this.roomsService.lock(socket.id, input);
+    ) {
+        const room = await this.roomsService.toggleLock(socket.data.userId, socket.data.roomCode);
+        this.emitToRoom(room.code, "room:lock_toggled", { isLocked: room.isLocked });
+    }
 
-        if (!result) {
-            return {
-                opCode: RoomEvent.Error,
-                roomCode: input.roomCode,
-                data: {
-                    code: RoomErrorCode.LockFailed,
-                    message: "Could not lock/unlock room",
-                },
-            };
+    @SubscribeMessage(EventsMessages.LeaveRoom)
+    async onLeave(
+        @ConnectedSocket()
+        socket: Socket,
+    ) {
+        const { roomCode, userId } = socket.data;
+
+        await this.roomsService.leave(roomCode, userId);
+
+        this.disconnectUser(socket.id);
+
+        this.emitToRoom(roomCode, "user:left", {
+            reason: "LEFT",
+            userId,
+        });
+    }
+
+    @SubscribeMessage(EventsMessages.CloseRoom)
+    async onCloseRoom(socket: Socket) {
+        const { roomCode } = socket.data;
+        await this.roomsService.close(socket.data.userId, roomCode);
+        this.emitToRoom(roomCode, "room:closed", { reason: "HOST_CLOSED" });
+
+        const sockets = await this.server.in(roomCode).fetchSockets();
+
+        for (const socket of sockets) {
+            socket.leave(roomCode);
+            socket.emit("room:closed", { reason: "HOST_CLOSED" });
+            socket.disconnect(true);
         }
+    }
 
-        const { room } = result;
+    async handleConnection(socket: Socket) {
+        try {
+            const token = socket.handshake.auth?.token;
+            const payload = this.eventsAuthService.verifyToken(token);
 
-        const event: RoomUpdatedEvent = {
-            opCode: RoomEvent.Updated,
-            roomCode: room.code,
-            data: {
-                room: mapRoomToDto(room),
-            },
-        };
+            const user = await this.roomsService.getRoomMember(payload.userId);
 
-        await this.sendToRoom(socket, room.code, event);
+            if (!user) {
+                socket.disconnect(true);
+                return;
+            }
 
-        return event;
+            const { roomCode, userId } = payload;
+
+            socket.data.userId = userId;
+            socket.data.roomCode = roomCode;
+
+            const updatedUser = await this.roomsService.updateConnectedUser(userId, socket.id);
+
+            const [room, existingUsers] = await Promise.all([
+                this.roomsService.getByCode(roomCode),
+                this.roomsService.getRoomMembersWithDetails(roomCode),
+            ]);
+
+            socket.join(roomCode);
+
+            this.emitToUser(socket.id, "room:state", { room, users: existingUsers });
+            this.emitToRoom(roomCode, "user:connected", { user: updatedUser });
+        } catch (error) {
+            this.logger.warn({ error }, "Connection failed");
+            socket.disconnect(true);
+        }
     }
 
     async handleDisconnect(
         @ConnectedSocket()
         socket: Socket,
-    ): Promise<GatewayEvent | null> {
-        const result = await this.roomsService.disconnect(socket.id);
-
-        if (!result) {
-            // User was not in any rooms - this is expected behavior, not an error
-            return null;
+    ) {
+        if (!socket.data?.roomCode || !socket.data?.userId) {
+            return;
         }
 
-        const { room } = result;
-
-        await this.sendToRoom(socket, room.code, {
-            opCode: RoomEvent.Updated,
-            roomCode: room.code,
-            data: {
-                room: mapRoomToDto(room),
-            },
-        });
-
-        return {
-            opCode: RoomEvent.Exited,
-            roomCode: room.code,
-            data: {
-                reason: RoomExitReason.Disconnected,
-            },
-        };
+        try {
+            const updatedUser = await this.roomsService.updateDisconnectedUser(socket.data.userId);
+            this.emitToRoom(socket.data.roomCode, "user:disconnected", { user: updatedUser });
+        } catch {
+            // User may have been deleted (e.g., room closed), ignore
+        }
     }
 }

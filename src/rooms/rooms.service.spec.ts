@@ -1,61 +1,48 @@
 import { createMock } from "@golevelup/ts-jest";
-import { getModelToken } from "@nestjs/mongoose";
+import { JwtService } from "@nestjs/jwt";
 import type { TestingModule } from "@nestjs/testing";
 import { Test } from "@nestjs/testing";
-import mongoose from "mongoose";
 import { PinoLogger } from "nestjs-pino";
 
 import {
     InvalidOperationException,
-    MemberNotFoundException,
     RoomNotFoundException,
     UnauthorizedHostActionException,
+    UserNotFoundException,
 } from "../common/exceptions/room.exceptions";
-import { RoomState } from "./model/enum/room-state.enum";
+import { ConfigService } from "../config/config.service";
+import { RedisService } from "../redis/redis.service";
+import type { RoomStoreModel } from "./model/store/room-store.model";
+import type { UserStoreModel } from "./model/store/user-store.model";
 import { RoomsService } from "./rooms.service";
-import { Member, type MemberDocument } from "./schema/member.schema";
-import { Room } from "./schema/room.schema";
 
 describe("RoomsService", () => {
     let service: RoomsService;
+    let redisService: jest.Mocked<RedisService>;
+    let jwtService: jest.Mocked<JwtService>;
+    let configService: jest.Mocked<ConfigService>;
 
-    let mockRoomModel: {
-        findOne: jest.Mock;
-        findOneAndUpdate: jest.Mock;
-        deleteOne: jest.Mock;
-    } & jest.Mock;
+    const createMockUser = (overrides: Partial<UserStoreModel> = {}): UserStoreModel => ({
+        displayName: "Test User",
+        id: "user-123",
+        isConnected: false,
+        roomCode: "ABCD12",
+        socketId: null,
+        ...overrides,
+    });
 
-    let mockMemberModel: jest.Mock;
-
-    const createMockMember = (overrides: Partial<MemberDocument> = {}): MemberDocument =>
-        ({
-            _id: new mongoose.Types.ObjectId(),
-            connected: true,
-            isHost: false,
-            name: "Test User",
-            socketId: "socket-123",
-            ...overrides,
-        }) as unknown as MemberDocument;
-
-    const createMockRoom = (overrides: Partial<Room> = {}): Room =>
-        ({
-            code: "ABCD12",
-            isLocked: false,
-            maxMembers: 10,
-            members: [createMockMember({ isHost: true })],
-            secret: "secret-123",
-            state: RoomState.Created,
-            ...overrides,
-        }) as Room;
+    const createMockRoom = (overrides: Partial<RoomStoreModel> = {}): RoomStoreModel => ({
+        code: "ABCD12",
+        hostId: "host-123",
+        isLocked: false,
+        maxUsers: 10,
+        state: "CREATED",
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        ...overrides,
+    });
 
     beforeEach(async () => {
-        mockRoomModel = Object.assign(jest.fn(), {
-            findOne: jest.fn(),
-            findOneAndUpdate: jest.fn(),
-            deleteOne: jest.fn(),
-        });
-        mockMemberModel = jest.fn();
-
         const module: TestingModule = await Test.createTestingModule({
             providers: [
                 RoomsService,
@@ -64,17 +51,24 @@ describe("RoomsService", () => {
                     useValue: createMock<PinoLogger>(),
                 },
                 {
-                    provide: getModelToken(Room.name),
-                    useValue: mockRoomModel,
+                    provide: RedisService,
+                    useValue: createMock<RedisService>(),
                 },
                 {
-                    provide: getModelToken(Member.name),
-                    useValue: mockMemberModel,
+                    provide: JwtService,
+                    useValue: createMock<JwtService>(),
+                },
+                {
+                    provide: ConfigService,
+                    useValue: createMock<ConfigService>(),
                 },
             ],
         }).compile();
 
         service = module.get<RoomsService>(RoomsService);
+        redisService = module.get(RedisService);
+        jwtService = module.get(JwtService);
+        configService = module.get(ConfigService);
     });
 
     afterEach(() => {
@@ -84,467 +78,539 @@ describe("RoomsService", () => {
     describe("getByCode", () => {
         test("should return room when found", async () => {
             const room = createMockRoom();
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
+            redisService.getJson.mockResolvedValue(room);
 
             const result = await service.getByCode("ABCD12");
 
             expect(result).toBe(room);
-            expect(mockRoomModel.findOne).toHaveBeenCalledWith({ code: "ABCD12" });
-        });
-
-        test("should uppercase the room code", async () => {
-            const room = createMockRoom();
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
-
-            await service.getByCode("abcd12");
-
-            expect(mockRoomModel.findOne).toHaveBeenCalledWith({ code: "ABCD12" });
+            expect(redisService.getJson).toHaveBeenCalledWith("room:ABCD12");
         });
 
         test("should throw RoomNotFoundException when room not found", async () => {
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(null),
-            });
+            redisService.getJson.mockResolvedValue(null);
 
             await expect(service.getByCode("NOTFOUND")).rejects.toThrow(RoomNotFoundException);
         });
     });
 
-    describe("create", () => {
-        test("should create a new room with host member", async () => {
-            const input = { name: "Host User", maxMembers: 5 };
-            const mockMember = createMockMember({ isHost: true, name: "Host User" });
-            const mockRoom = createMockRoom({ members: [mockMember] });
+    describe("getRoomMember", () => {
+        test("should return user when found", async () => {
+            const user = createMockUser();
+            redisService.getJson.mockResolvedValue(user);
 
-            mockMemberModel.mockReturnValue(mockMember);
-            mockRoomModel.mockReturnValue({
-                ...mockRoom,
-                save: jest.fn().mockResolvedValue(mockRoom),
+            const result = await service.getRoomMember("user-123");
+
+            expect(result).toBe(user);
+            expect(redisService.getJson).toHaveBeenCalledWith("user:user-123");
+        });
+
+        test("should throw UserNotFoundException when user not found", async () => {
+            redisService.getJson.mockResolvedValue(null);
+
+            await expect(service.getRoomMember("unknown")).rejects.toThrow(UserNotFoundException);
+        });
+    });
+
+    describe("getRoomMembers", () => {
+        test("should return members array when found", async () => {
+            const members = ["user-1", "user-2"];
+            redisService.smembers.mockResolvedValue(members);
+
+            const result = await service.getRoomMembers("ABCD12");
+
+            expect(result).toEqual(members);
+            expect(redisService.smembers).toHaveBeenCalledWith("room:ABCD12:users");
+        });
+
+        test("should return empty array when no members found", async () => {
+            redisService.smembers.mockResolvedValue([]);
+
+            const result = await service.getRoomMembers("ABCD12");
+
+            expect(result).toEqual([]);
+        });
+    });
+
+    describe("isMember", () => {
+        test("should return true when user is a member", async () => {
+            redisService.sismember.mockResolvedValue(true);
+
+            const result = await service.isMember("ABCD12", "user-1");
+
+            expect(result).toBe(true);
+            expect(redisService.sismember).toHaveBeenCalledWith("room:ABCD12:users", "user-1");
+        });
+
+        test("should return false when user is not a member", async () => {
+            redisService.sismember.mockResolvedValue(false);
+
+            const result = await service.isMember("ABCD12", "user-3");
+
+            expect(result).toBe(false);
+        });
+    });
+
+    describe("getRoomMembersWithDetails", () => {
+        test("should return array of user details for all members", async () => {
+            const user1 = createMockUser({ id: "user-1", displayName: "User 1" });
+            const user2 = createMockUser({ id: "user-2", displayName: "User 2" });
+            redisService.smembers.mockResolvedValue(["user-1", "user-2"]);
+            redisService.getJson.mockResolvedValueOnce(user1).mockResolvedValueOnce(user2);
+
+            const result = await service.getRoomMembersWithDetails("ABCD12");
+
+            expect(result).toEqual([user1, user2]);
+            expect(redisService.smembers).toHaveBeenCalledWith("room:ABCD12:users");
+            expect(redisService.getJson).toHaveBeenCalledWith("user:user-1");
+            expect(redisService.getJson).toHaveBeenCalledWith("user:user-2");
+        });
+
+        test("should filter out null users", async () => {
+            const user1 = createMockUser({ id: "user-1", displayName: "User 1" });
+            redisService.smembers.mockResolvedValue(["user-1", "user-2"]);
+            redisService.getJson.mockResolvedValueOnce(user1).mockResolvedValueOnce(null);
+
+            const result = await service.getRoomMembersWithDetails("ABCD12");
+
+            expect(result).toEqual([user1]);
+        });
+
+        test("should return empty array when no members", async () => {
+            redisService.smembers.mockResolvedValue([]);
+
+            const result = await service.getRoomMembersWithDetails("ABCD12");
+
+            expect(result).toEqual([]);
+        });
+    });
+
+    describe("create", () => {
+        const mockRoomTtl = 3600;
+
+        beforeEach(() => {
+            Object.defineProperty(configService, "roomCodeAlphabet", {
+                get: () => "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
+                configurable: true,
+            });
+            Object.defineProperty(configService, "roomCodeLength", {
+                get: () => 6,
+                configurable: true,
+            });
+            Object.defineProperty(configService, "roomTtlSeconds", {
+                get: () => mockRoomTtl,
+                configurable: true,
+            });
+        });
+
+        test("should create a new room with host user", async () => {
+            jwtService.sign.mockReturnValue("test-token");
+
+            const result = await service.create({
+                displayName: "Host User",
+                maxUsers: 5,
             });
 
-            const result = await service.create(input);
+            expect(result.roomCode).toBeDefined();
+            expect(result.token).toBe("test-token");
+            expect(redisService.setJson).toHaveBeenCalledTimes(2);
+            expect(redisService.sadd).toHaveBeenCalled();
+            expect(jwtService.sign).toHaveBeenCalled();
+        });
 
-            expect(result).toEqual(mockRoom);
+        test("should set TTL on room, user, and members set", async () => {
+            jwtService.sign.mockReturnValue("test-token");
+
+            const result = await service.create({
+                displayName: "Host User",
+                maxUsers: 5,
+            });
+
+            // Room should have TTL
+            expect(redisService.setJson).toHaveBeenCalledWith(
+                `room:${result.roomCode}`,
+                expect.objectContaining({ code: result.roomCode }),
+                mockRoomTtl,
+            );
+
+            // User should have TTL
+            expect(redisService.setJson).toHaveBeenCalledWith(
+                expect.stringMatching(/^user:/),
+                expect.objectContaining({ roomCode: result.roomCode }),
+                mockRoomTtl,
+            );
+
+            // Members set should have expire called
+            expect(redisService.expire).toHaveBeenCalledWith(
+                `room:${result.roomCode}:users`,
+                mockRoomTtl,
+            );
         });
     });
 
     describe("join", () => {
+        const mockRoomTtl = 3600;
+
+        beforeEach(() => {
+            Object.defineProperty(configService, "roomTtlSeconds", {
+                get: () => mockRoomTtl,
+                configurable: true,
+            });
+        });
+
         test("should add new member to existing room", async () => {
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const room = createMockRoom({ members: [host] });
-            const newMember = createMockMember({ isHost: false, name: "New User" });
+            const room = createMockRoom();
+            redisService.getJson.mockResolvedValueOnce(room);
+            redisService.smembers.mockResolvedValueOnce(["host-123"]);
+            jwtService.sign.mockReturnValue("new-user-token");
 
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
-            mockRoomModel.findOneAndUpdate.mockResolvedValue(room);
-            mockMemberModel.mockReturnValue(newMember);
+            const result = await service.join("ABCD12", "New User");
 
-            const result = await service.join("ABCD12", { name: "New User" });
-
-            expect(result.host).toBe(host);
-            expect(result.me).toBe(newMember);
-            expect(result.room).toBe(room);
+            expect(result.roomCode).toBe("ABCD12");
+            expect(result.token).toBe("new-user-token");
+            expect(redisService.setJson).toHaveBeenCalledTimes(1);
+            expect(redisService.sadd).toHaveBeenCalled();
         });
 
-        test("should return existing member if memberId matches", async () => {
-            const existingMember = createMockMember({ isHost: false });
-            const memberId = existingMember._id.toHexString();
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const room = createMockRoom({ members: [host, existingMember] });
+        test("should set TTL on new user", async () => {
+            const room = createMockRoom();
+            redisService.getJson.mockResolvedValueOnce(room);
+            redisService.smembers.mockResolvedValueOnce(["host-123"]);
+            jwtService.sign.mockReturnValue("new-user-token");
 
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
+            await service.join("ABCD12", "New User");
 
-            const result = await service.join("ABCD12", { name: "User", memberId });
-
-            expect(result.me).toBe(existingMember);
-            expect(mockRoomModel.findOneAndUpdate).not.toHaveBeenCalled();
-        });
-
-        test("should throw InvalidOperationException when room has no host", async () => {
-            const room = createMockRoom({ members: [] });
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
-
-            await expect(service.join("ABCD12", { name: "User" })).rejects.toThrow(
-                InvalidOperationException,
+            expect(redisService.setJson).toHaveBeenCalledWith(
+                expect.stringMatching(/^user:/),
+                expect.objectContaining({ displayName: "New User", roomCode: "ABCD12" }),
+                mockRoomTtl,
             );
         });
 
         test("should throw InvalidOperationException when room is locked", async () => {
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const room = createMockRoom({ members: [host], isLocked: true });
+            const room = createMockRoom({ isLocked: true });
+            redisService.getJson.mockResolvedValueOnce(room);
+            redisService.smembers.mockResolvedValueOnce([]);
 
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
-
-            await expect(service.join("ABCD12", { name: "User" })).rejects.toThrow(
-                InvalidOperationException,
-            );
+            await expect(service.join("ABCD12", "User")).rejects.toThrow(InvalidOperationException);
         });
 
         test("should throw InvalidOperationException when room is full", async () => {
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const member = createMockMember({ isHost: false, socketId: "member-socket" });
-            const room = createMockRoom({ members: [host, member], maxMembers: 2 });
+            const room = createMockRoom({ maxUsers: 2 });
+            redisService.getJson.mockResolvedValueOnce(room);
+            redisService.smembers.mockResolvedValueOnce(["user-1", "user-2"]);
 
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
+            await expect(service.join("ABCD12", "User")).rejects.toThrow(InvalidOperationException);
+        });
 
-            await expect(service.join("ABCD12", { name: "User" })).rejects.toThrow(
-                InvalidOperationException,
+        test("should throw RoomNotFoundException when room does not exist", async () => {
+            redisService.getJson.mockResolvedValue(null);
+
+            await expect(service.join("NOTFOUND", "User")).rejects.toThrow(RoomNotFoundException);
+        });
+    });
+
+    describe("rejoin", () => {
+        test("should return new session for existing member", async () => {
+            const user = createMockUser();
+            redisService.smembers.mockResolvedValueOnce(["user-123"]);
+            redisService.getJson.mockResolvedValueOnce(user);
+            jwtService.sign.mockReturnValue("rejoin-token");
+
+            const result = await service.rejoin("ABCD12", "user-123");
+
+            expect(result.roomCode).toBe("ABCD12");
+            expect(result.token).toBe("rejoin-token");
+        });
+
+        test("should throw UserNotFoundException when user is not a member", async () => {
+            redisService.smembers.mockResolvedValueOnce(["other-user"]);
+
+            await expect(service.rejoin("ABCD12", "user-123")).rejects.toThrow(
+                UserNotFoundException,
             );
         });
 
-        test("should allow existing member to rejoin locked room", async () => {
-            const existingMember = createMockMember({ isHost: false });
-            const memberId = existingMember._id.toHexString();
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const room = createMockRoom({ members: [host, existingMember], isLocked: true });
+        test("should throw UserNotFoundException when user data not found", async () => {
+            redisService.smembers.mockResolvedValueOnce(["user-123"]);
+            redisService.getJson.mockResolvedValueOnce(null);
 
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
-
-            const result = await service.join("ABCD12", { name: "User", memberId });
-
-            expect(result.me).toBe(existingMember);
-        });
-
-        test("should allow existing member to rejoin full room", async () => {
-            const existingMember = createMockMember({ isHost: false });
-            const memberId = existingMember._id.toHexString();
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const room = createMockRoom({ members: [host, existingMember], maxMembers: 2 });
-
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
-
-            const result = await service.join("ABCD12", { name: "User", memberId });
-
-            expect(result.me).toBe(existingMember);
-        });
-    });
-
-    describe("connect", () => {
-        test("should update member connection status", async () => {
-            const member = createMockMember({ socketId: "socket-123" });
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const room = createMockRoom({ members: [host, member] });
-            const memberId = member._id.toHexString();
-
-            mockRoomModel.findOneAndUpdate.mockResolvedValue(room);
-
-            const result = await service.connect("socket-123", {
-                memberId,
-                roomCode: "ABCD12",
-            });
-
-            expect(result.room).toBe(room);
-            expect(mockRoomModel.findOneAndUpdate).toHaveBeenCalled();
-        });
-
-        test("should throw RoomNotFoundException when room not found", async () => {
-            mockRoomModel.findOneAndUpdate.mockResolvedValue(null);
-
-            await expect(
-                service.connect("socket-123", {
-                    memberId: "507f1f77bcf86cd799439011",
-                    roomCode: "NOTFOUND",
-                }),
-            ).rejects.toThrow(RoomNotFoundException);
-        });
-    });
-
-    describe("disconnect", () => {
-        test("should update member to disconnected", async () => {
-            const member = createMockMember({ socketId: "socket-123" });
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const room = createMockRoom({ members: [host, member] });
-
-            mockRoomModel.findOneAndUpdate.mockResolvedValue(room);
-
-            const result = await service.disconnect("socket-123");
-
-            expect(result.room).toBe(room);
-        });
-
-        test("should throw InvalidOperationException when socketId is empty", async () => {
-            await expect(service.disconnect("")).rejects.toThrow(InvalidOperationException);
-        });
-
-        test("should throw RoomNotFoundException when member not found", async () => {
-            mockRoomModel.findOneAndUpdate.mockResolvedValue(null);
-
-            await expect(service.disconnect("unknown-socket")).rejects.toThrow(
-                RoomNotFoundException,
-            );
-        });
-    });
-
-    describe("reconnect", () => {
-        test("should update socket ID and reconnect", async () => {
-            const member = createMockMember({ socketId: "new-socket" });
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const room = createMockRoom({ members: [host, member] });
-
-            mockRoomModel.findOneAndUpdate.mockResolvedValue(room);
-
-            const result = await service.reconnect("new-socket", "old-socket");
-
-            expect(result.room).toBe(room);
-        });
-
-        test("should throw RoomNotFoundException when old socket not found", async () => {
-            mockRoomModel.findOneAndUpdate.mockResolvedValue(null);
-
-            await expect(service.reconnect("new-socket", "unknown-socket")).rejects.toThrow(
-                RoomNotFoundException,
+            await expect(service.rejoin("ABCD12", "user-123")).rejects.toThrow(
+                UserNotFoundException,
             );
         });
     });
 
     describe("leave", () => {
         test("should remove member from room", async () => {
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const member = createMockMember({ isHost: false, socketId: "socket-123" });
-            const room = createMockRoom({ members: [host, member] });
+            const room = createMockRoom({ hostId: "host-123" });
+            redisService.smembers.mockResolvedValueOnce(["host-123", "user-123"]);
+            redisService.getJson.mockResolvedValueOnce(room);
 
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
-            mockRoomModel.findOneAndUpdate.mockResolvedValue(room);
+            await service.leave("ABCD12", "user-123");
 
-            const result = await service.leave("socket-123", { roomCode: "ABCD12" });
-
-            expect(result?.room).toBe(room);
+            expect(redisService.srem).toHaveBeenCalledWith("room:ABCD12:users", "user-123");
         });
 
-        test("should delete room when last member leaves", async () => {
-            const host = createMockMember({ isHost: true, socketId: "socket-123" });
-            const room = createMockRoom({ members: [host] });
+        test("should throw UserNotFoundException when user not in room", async () => {
+            redisService.smembers.mockResolvedValueOnce(["other-user"]);
 
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
-            mockRoomModel.deleteOne.mockResolvedValue({ deletedCount: 1 });
-
-            const result = await service.leave("socket-123", { roomCode: "ABCD12" });
-
-            expect(result).toBeNull();
-            expect(mockRoomModel.deleteOne).toHaveBeenCalledWith({ code: "ABCD12" });
+            await expect(service.leave("ABCD12", "user-123")).rejects.toThrow(
+                UserNotFoundException,
+            );
         });
 
-        test("should transfer host when host leaves", async () => {
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const member = createMockMember({ isHost: false, socketId: "member-socket" });
-            const room = createMockRoom({ members: [host, member] });
+        test("should transfer host when host leaves and other members exist", async () => {
+            const room = createMockRoom({ hostId: "host-123" });
+            redisService.smembers.mockResolvedValueOnce(["host-123", "user-123"]);
+            redisService.getJson
+                .mockResolvedValueOnce(room) // getByCode in leave
+                .mockResolvedValueOnce(room); // getByCode in updateHost
+            redisService.sismember.mockResolvedValueOnce(true);
 
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
-            mockRoomModel.findOneAndUpdate.mockResolvedValue(room);
+            await service.leave("ABCD12", "host-123");
 
-            await service.leave("host-socket", { roomCode: "ABCD12" });
-
-            expect(mockRoomModel.findOneAndUpdate).toHaveBeenCalledTimes(2);
-        });
-
-        test("should throw MemberNotFoundException when member not in room", async () => {
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const room = createMockRoom({ members: [host] });
-
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
-
-            await expect(service.leave("unknown-socket", { roomCode: "ABCD12" })).rejects.toThrow(
-                MemberNotFoundException,
+            expect(redisService.srem).toHaveBeenCalledWith("room:ABCD12:users", "host-123");
+            expect(redisService.setJson).toHaveBeenCalledWith(
+                "room:ABCD12",
+                expect.objectContaining({ hostId: "user-123" }),
             );
         });
     });
 
     describe("kick", () => {
         test("should remove kicked member from room", async () => {
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const member = createMockMember({ isHost: false, socketId: "member-socket" });
-            const memberId = member._id.toHexString();
-            const room = createMockRoom({ members: [host, member], secret: "secret" });
+            const room = createMockRoom({ hostId: "host-123" });
+            const memberToKick = createMockUser({ id: "user-123", socketId: "socket-456" });
+            redisService.getJson.mockResolvedValueOnce(room).mockResolvedValueOnce(memberToKick);
 
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
-            mockRoomModel.findOneAndUpdate.mockResolvedValue(room);
+            const result = await service.kick("host-123", "ABCD12", "user-123");
 
-            const result = await service.kick("host-socket", {
-                memberId,
-                roomCode: "ABCD12",
-                secret: "secret",
-            });
-
-            expect(result.kickedMember).toBe(member);
+            expect(result.kickedSocketId).toBe("socket-456");
+            expect(redisService.del).toHaveBeenCalled();
+            expect(redisService.srem).toHaveBeenCalledWith("room:ABCD12:users", "user-123");
         });
 
         test("should throw UnauthorizedHostActionException when not host", async () => {
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const member = createMockMember({ isHost: false, socketId: "member-socket" });
-            const room = createMockRoom({ members: [host, member] });
+            const room = createMockRoom({ hostId: "host-123" });
+            redisService.getJson.mockResolvedValueOnce(room);
 
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
-
-            await expect(
-                service.kick("member-socket", {
-                    memberId: "any-id",
-                    roomCode: "ABCD12",
-                    secret: "secret",
-                }),
-            ).rejects.toThrow(UnauthorizedHostActionException);
-        });
-
-        test("should throw MemberNotFoundException when member to kick not found", async () => {
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const room = createMockRoom({ members: [host] });
-
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
-
-            await expect(
-                service.kick("host-socket", {
-                    memberId: "507f1f77bcf86cd799439011",
-                    roomCode: "ABCD12",
-                    secret: "secret",
-                }),
-            ).rejects.toThrow(MemberNotFoundException);
+            await expect(service.kick("user-123", "ABCD12", "other-user")).rejects.toThrow(
+                UnauthorizedHostActionException,
+            );
         });
 
         test("should throw InvalidOperationException when trying to kick self", async () => {
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const memberId = host._id.toHexString();
-            const room = createMockRoom({ members: [host] });
+            const room = createMockRoom({ hostId: "host-123" });
+            redisService.getJson.mockResolvedValueOnce(room);
 
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
+            await expect(service.kick("host-123", "ABCD12", "host-123")).rejects.toThrow(
+                InvalidOperationException,
+            );
+        });
+
+        test("should throw UserNotFoundException when member to kick not found", async () => {
+            const room = createMockRoom({ hostId: "host-123" });
+            redisService.getJson.mockResolvedValueOnce(room).mockResolvedValueOnce(null);
+
+            await expect(service.kick("host-123", "ABCD12", "unknown-user")).rejects.toThrow(
+                UserNotFoundException,
+            );
+        });
+    });
+
+    describe("updateConnectedUser", () => {
+        test("should update user connection status", async () => {
+            const user = createMockUser({ isConnected: false, socketId: null });
+            redisService.getJson.mockResolvedValue(user);
+
+            const result = await service.updateConnectedUser("user-123", "socket-456");
+
+            expect(result.isConnected).toBe(true);
+            expect(result.socketId).toBe("socket-456");
+            expect(redisService.setJson).toHaveBeenCalledWith("user:user-123", {
+                ...user,
+                isConnected: true,
+                socketId: "socket-456",
             });
+        });
 
-            await expect(
-                service.kick("host-socket", {
-                    memberId,
-                    roomCode: "ABCD12",
-                    secret: "secret",
-                }),
-            ).rejects.toThrow(InvalidOperationException);
+        test("should throw UserNotFoundException when user not found", async () => {
+            redisService.getJson.mockResolvedValue(null);
+
+            await expect(service.updateConnectedUser("unknown", "socket")).rejects.toThrow(
+                UserNotFoundException,
+            );
+        });
+    });
+
+    describe("updateDisconnectedUser", () => {
+        test("should update user to disconnected", async () => {
+            const user = createMockUser({ isConnected: true, socketId: "socket-456" });
+            redisService.getJson.mockResolvedValue(user);
+
+            const result = await service.updateDisconnectedUser("user-123");
+
+            expect(result.isConnected).toBe(false);
+            expect(result.socketId).toBeNull();
+            expect(redisService.setJson).toHaveBeenCalledWith("user:user-123", {
+                ...user,
+                isConnected: false,
+                socketId: null,
+            });
+        });
+
+        test("should throw UserNotFoundException when user not found", async () => {
+            redisService.getJson.mockResolvedValue(null);
+
+            await expect(service.updateDisconnectedUser("unknown")).rejects.toThrow(
+                UserNotFoundException,
+            );
         });
     });
 
     describe("updateHost", () => {
         test("should transfer host to another member", async () => {
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const member = createMockMember({ isHost: false, socketId: "member-socket" });
-            const memberId = member._id.toHexString();
-            const room = createMockRoom({ members: [host, member], secret: "secret" });
+            const room = createMockRoom({ hostId: "host-123" });
+            redisService.getJson.mockResolvedValueOnce(room);
+            redisService.sismember.mockResolvedValueOnce(true);
 
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
+            const result = await service.updateHost("host-123", "ABCD12", "user-123");
+
+            expect(result.hostId).toBe("user-123");
+            expect(redisService.setJson).toHaveBeenCalledWith("room:ABCD12", {
+                ...room,
+                hostId: "user-123",
             });
-            mockRoomModel.findOneAndUpdate.mockResolvedValue(room);
-
-            const result = await service.updateHost("host-socket", {
-                memberId,
-                roomCode: "ABCD12",
-                secret: "secret",
-            });
-
-            expect(result.room).toBe(room);
         });
 
         test("should throw UnauthorizedHostActionException when not host", async () => {
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const member = createMockMember({ isHost: false, socketId: "member-socket" });
-            const room = createMockRoom({ members: [host, member] });
+            const room = createMockRoom({ hostId: "host-123" });
+            redisService.getJson.mockResolvedValueOnce(room);
 
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
-
-            await expect(
-                service.updateHost("member-socket", {
-                    memberId: "any-id",
-                    roomCode: "ABCD12",
-                    secret: "secret",
-                }),
-            ).rejects.toThrow(UnauthorizedHostActionException);
-        });
-
-        test("should throw MemberNotFoundException when target member not found", async () => {
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const room = createMockRoom({ members: [host] });
-
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
-
-            await expect(
-                service.updateHost("host-socket", {
-                    memberId: "507f1f77bcf86cd799439011",
-                    roomCode: "ABCD12",
-                    secret: "secret",
-                }),
-            ).rejects.toThrow(MemberNotFoundException);
+            await expect(service.updateHost("user-123", "ABCD12", "other-user")).rejects.toThrow(
+                UnauthorizedHostActionException,
+            );
         });
 
         test("should throw InvalidOperationException when already host", async () => {
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const memberId = host._id.toHexString();
-            const room = createMockRoom({ members: [host] });
+            const room = createMockRoom({ hostId: "host-123" });
+            redisService.getJson.mockResolvedValueOnce(room);
 
-            mockRoomModel.findOne.mockReturnValue({
-                exec: jest.fn().mockResolvedValue(room),
-            });
+            await expect(service.updateHost("host-123", "ABCD12", "host-123")).rejects.toThrow(
+                InvalidOperationException,
+            );
+        });
 
-            await expect(
-                service.updateHost("host-socket", {
-                    memberId,
-                    roomCode: "ABCD12",
-                    secret: "secret",
-                }),
-            ).rejects.toThrow(InvalidOperationException);
+        test("should throw UserNotFoundException when target not a member", async () => {
+            const room = createMockRoom({ hostId: "host-123" });
+            redisService.getJson.mockResolvedValueOnce(room);
+            redisService.sismember.mockResolvedValueOnce(false);
+
+            await expect(service.updateHost("host-123", "ABCD12", "unknown-user")).rejects.toThrow(
+                UserNotFoundException,
+            );
         });
     });
 
-    describe("lock", () => {
-        test("should toggle room lock status", async () => {
-            const host = createMockMember({ isHost: true, socketId: "host-socket" });
-            const room = createMockRoom({ members: [host], secret: "secret" });
+    describe("toggleLock", () => {
+        test("should toggle room lock from false to true", async () => {
+            const room = createMockRoom({ isLocked: false });
+            redisService.getJson.mockResolvedValue(room);
 
-            mockRoomModel.findOneAndUpdate.mockResolvedValue(room);
+            const result = await service.toggleLock("host-123", "ABCD12");
 
-            const result = await service.lock("host-socket", {
-                roomCode: "ABCD12",
-                secret: "secret",
+            expect(result.isLocked).toBe(true);
+            expect(redisService.setJson).toHaveBeenCalledWith("room:ABCD12", {
+                ...room,
+                isLocked: true,
             });
-
-            expect(result.room).toBe(room);
         });
 
-        test("should throw RoomNotFoundException when room not found or unauthorized", async () => {
-            mockRoomModel.findOneAndUpdate.mockResolvedValue(null);
+        test("should toggle room lock from true to false", async () => {
+            const room = createMockRoom({ isLocked: true });
+            redisService.getJson.mockResolvedValue(room);
 
-            await expect(
-                service.lock("socket", { roomCode: "ABCD12", secret: "secret" }),
-            ).rejects.toThrow(RoomNotFoundException);
+            const result = await service.toggleLock("host-123", "ABCD12");
+
+            expect(result.isLocked).toBe(false);
+        });
+
+        test("should throw UnauthorizedHostActionException when not host", async () => {
+            const room = createMockRoom({ hostId: "host-123" });
+            redisService.getJson.mockResolvedValue(room);
+
+            await expect(service.toggleLock("user-123", "ABCD12")).rejects.toThrow(
+                UnauthorizedHostActionException,
+            );
+        });
+
+        test("should throw RoomNotFoundException when room not found", async () => {
+            redisService.getJson.mockResolvedValue(null);
+
+            await expect(service.toggleLock("host-123", "NOTFOUND")).rejects.toThrow(
+                RoomNotFoundException,
+            );
+        });
+    });
+
+    describe("close", () => {
+        test("should close room and delete all data via transaction", async () => {
+            const room = createMockRoom({ hostId: "host-123" });
+            const mockMulti = {
+                del: jest.fn().mockReturnThis(),
+                exec: jest.fn().mockResolvedValue([]),
+            };
+            redisService.getJson.mockResolvedValueOnce(room);
+            redisService.smembers.mockResolvedValueOnce(["host-123", "user-1", "user-2"]);
+            redisService.multi.mockReturnValue(mockMulti as never);
+
+            await service.close("host-123", "ABCD12");
+
+            expect(mockMulti.del).toHaveBeenCalledWith("user:host-123");
+            expect(mockMulti.del).toHaveBeenCalledWith("user:user-1");
+            expect(mockMulti.del).toHaveBeenCalledWith("user:user-2");
+            expect(mockMulti.del).toHaveBeenCalledWith("room:ABCD12:users");
+            expect(mockMulti.del).toHaveBeenCalledWith("room:ABCD12");
+            expect(mockMulti.exec).toHaveBeenCalled();
+        });
+
+        test("should throw UnauthorizedHostActionException when not host", async () => {
+            const room = createMockRoom({ hostId: "host-123" });
+            redisService.getJson.mockResolvedValueOnce(room);
+
+            await expect(service.close("user-123", "ABCD12")).rejects.toThrow(
+                UnauthorizedHostActionException,
+            );
+        });
+
+        test("should throw RoomNotFoundException when room not found", async () => {
+            redisService.getJson.mockResolvedValueOnce(null);
+
+            await expect(service.close("host-123", "NOTFOUND")).rejects.toThrow(
+                RoomNotFoundException,
+            );
+        });
+    });
+
+    describe("deleteRoom", () => {
+        test("should delete room and all member data", async () => {
+            redisService.smembers.mockResolvedValue(["user-1", "user-2"]);
+
+            await service.deleteRoom("ABCD12");
+
+            expect(redisService.del).toHaveBeenCalledWith("user:user-1");
+            expect(redisService.del).toHaveBeenCalledWith("user:user-2");
+            expect(redisService.del).toHaveBeenCalledWith("room:ABCD12:users");
+            expect(redisService.del).toHaveBeenCalledWith("room:ABCD12");
+        });
+
+        test("should handle room with no members", async () => {
+            redisService.smembers.mockResolvedValue([]);
+
+            await service.deleteRoom("ABCD12");
+
+            expect(redisService.del).toHaveBeenCalledWith("room:ABCD12:users");
+            expect(redisService.del).toHaveBeenCalledWith("room:ABCD12");
         });
     });
 });

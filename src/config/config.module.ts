@@ -10,11 +10,15 @@ import { ConfigService } from "./config.service";
         NestConfigModule.forRoot({
             isGlobal: false,
             validationSchema: joi.object({
+                JWT_SECRET: joi.string().required(),
+                REDIS_HOST: joi.string().required(),
+                REDIS_PORT: joi.number().required(),
                 ROOM_CODE_ALPHABET: joi.string().required(),
                 ROOM_CODE_LENGTH: joi.number().required(),
-                ROOM_MAX_MEMBERS: joi.number().required(),
-                USER_NAME_MAX_LENGTH: joi.number().required(),
-                USER_NAME_MIN_LENGTH: joi.number().required(),
+                ROOM_MAX_USERS: joi.number().required(),
+                ROOM_TTL_SECONDS: joi.number().required(),
+                USER_DISPLAY_NAME_MAX_LENGTH: joi.number().required(),
+                USER_DISPLAY_NAME_MIN_LENGTH: joi.number().required(),
             }),
         }),
     ],

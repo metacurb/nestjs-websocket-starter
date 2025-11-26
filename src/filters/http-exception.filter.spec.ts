@@ -2,9 +2,9 @@ import { BadRequestException, ForbiddenException, NotFoundException } from "@nes
 
 import {
     InvalidOperationException,
-    MemberNotFoundException,
     RoomNotFoundException,
     UnauthorizedHostActionException,
+    UserNotFoundException,
 } from "../common/exceptions/room.exceptions";
 import { RoomErrorCode } from "../events/model/room.event";
 import { HttpDomainExceptionFilter } from "./http-exception.filter";
@@ -24,10 +24,10 @@ describe("HttpDomainExceptionFilter", () => {
             expectedMessage: "Room does not exist",
         },
         {
-            name: "MemberNotFoundException",
-            exception: new MemberNotFoundException("Member does not exist"),
+            name: "UserNotFoundException",
+            exception: new UserNotFoundException("User does not exist"),
             expectedType: NotFoundException,
-            expectedMessage: "Member does not exist",
+            expectedMessage: "User does not exist",
         },
         {
             name: "UnauthorizedHostActionException",
@@ -59,14 +59,14 @@ describe("HttpDomainExceptionFilter", () => {
             expectedMessage: "Room not found",
         },
         {
-            name: "MemberNotFoundException",
-            exception: new MemberNotFoundException(),
-            expectedMessage: "Member not found",
+            name: "UserNotFoundException",
+            exception: new UserNotFoundException(),
+            expectedMessage: "User not found",
         },
         {
             name: "UnauthorizedHostActionException",
             exception: new UnauthorizedHostActionException(),
-            expectedMessage: "Member is not host of room",
+            expectedMessage: "User is not host of room",
         },
     ])("should use default message for $name", ({ exception, expectedMessage }) => {
         expect(() => filter.catch(exception)).toThrow(expectedMessage);

@@ -1,18 +1,19 @@
 import { ArgumentsHost, Catch, ExceptionFilter } from "@nestjs/common";
+import { Socket } from "socket.io";
 
 import {
     InvalidOperationException,
-    MemberNotFoundException,
     RoomNotFoundException,
     UnauthorizedHostActionException,
+    UserNotFoundException,
 } from "../common/exceptions/room.exceptions";
-import { RoomErrorCode, RoomErrorEvent, RoomEvent } from "../events/model/room.event";
+import { mapDomainExceptionToRoomErrorEvent } from "../events/mapping/map-domain-exception-to-room-error-event";
 
 const DOMAIN_EXCEPTIONS = [
-    RoomNotFoundException,
-    MemberNotFoundException,
-    UnauthorizedHostActionException,
     InvalidOperationException,
+    RoomNotFoundException,
+    UnauthorizedHostActionException,
+    UserNotFoundException,
 ];
 
 type DomainException = InstanceType<(typeof DOMAIN_EXCEPTIONS)[number]>;
@@ -20,18 +21,8 @@ type DomainException = InstanceType<(typeof DOMAIN_EXCEPTIONS)[number]>;
 @Catch(...DOMAIN_EXCEPTIONS)
 export class WsDomainExceptionFilter implements ExceptionFilter {
     catch(exception: DomainException, host: ArgumentsHost) {
-        const callback = host.getArgByIndex(2);
-
-        const errorEvent: RoomErrorEvent = {
-            opCode: RoomEvent.Error,
-            data: {
-                code: exception.errorCode ?? RoomErrorCode.UnknownError,
-                message: exception.message,
-            },
-        };
-
-        if (typeof callback === "function") {
-            callback(errorEvent);
-        }
+        const client = host.switchToWs().getClient<Socket>();
+        const errorEvent = mapDomainExceptionToRoomErrorEvent(exception);
+        client.emit("room:error", errorEvent);
     }
 }

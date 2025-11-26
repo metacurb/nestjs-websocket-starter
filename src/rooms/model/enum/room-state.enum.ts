@@ -1,4 +1,1 @@
-export enum RoomState {
-    Created = "CREATED",
-    Closed = "CLOSED",
-}
+export type RoomState = "CREATED" | "CLOSED";

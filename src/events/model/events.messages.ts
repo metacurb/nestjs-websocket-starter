@@ -1,8 +1,7 @@
 export enum EventsMessages {
-    ConnectToRoom = "room.connect",
-    KickFromRoom = "room.kick_user",
-    LeaveRoom = "room.leave",
-    ReconnectToRoom = "room.reconnect",
-    LockRoom = "room.lock",
-    UpdateHost = "room.update_host",
+    CloseRoom = "room:close",
+    KickFromRoom = "room:kick",
+    LeaveRoom = "room:leave",
+    ToggleLock = "room:toggle_lock",
+    TransferHost = "room:transfer_host",
 }

@@ -1,6 +1,10 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
 
 <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NestJS WebSocket Room Demo</title>
   <script src="https://cdn.socket.io/4.3.2/socket.io.min.js"
     integrity="sha384-KAZ4DtjNhLChOB/hxXuKqhMLYvx3b5MlT55xPEiNmREKRzeEm+RVPlTnAn0ajQNs"
     crossorigin="anonymous"></script>
@@ -8,268 +12,905 @@
 
 <body>
   <div id="root"></div>
-  <script type="text/babel" data-presets="react,stage-3">
-    const { useState, useEffect } = React;
 
-    const socket = io('http://localhost:3000/rooms');
-
-    const Container = () => {
-      const [inRoom, setInRoom] = useState(false)
-      const [isConnected, setIsConnected] = useState(socket.connected);
-      const [me, setMe] = useState({});
-      const [room, setRoom] = useState({});
-      const [members, setMembers] = useState([]);
-
-
-      useEffect(() => {
-        onConnect = () => setIsConnected(true);
-        onDisconnect = () => setIsConnected(false);
-        onEvent = (event) => {
-          const { opCode, data } = event
-
-          console.log(event, { opCode, data })
-
-          switch (opCode) {
-            case "room/exited":
-              setInRoom(false)
-              setRoom({})
-              setMembers([])
-              alert(`You have left the room. Reason: ${data.reason}`)
-              break;
-            case "room/host_change":
-              localStorage.setItem("secret", data.secret)
-              break;
-            case "room/updated":
-              setRoom(data.room)
-              setMembers(data.room.members)
-              break;
-          }
-        }
-
-        socket.on('connect', onConnect);
-        socket.on('disconnect', onDisconnect);
-        socket.on('event', onEvent);
-        socket.on('exception', (e) => console.log('exception', e));
-
-        return () => {
-          socket.off('connect', onConnect);
-          socket.off('disconnect', onDisconnect);
-          socket.off('event', onEvent);
-        };
-      }, []);
-
-      const onCreateRoom = async ({ name }) => {
-
-        const response = await fetch("http://localhost:3000/rooms", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ name })
-        })
-        const result = await response.json()
-
-        setMe(result.member)
-        setRoom(result.room)
-
-        localStorage.setItem("memberId", result.member.id)
-        localStorage.setItem("roomCode", result.room.code)
-        localStorage.setItem("secret", result.room.secret)
-
-        const event = "room.connect"
-        const payload = { memberId: result.member.id, roomCode: result.room.code }
-        console.log(`[triggered:${event}]`, payload)
-        socket.emit(event, payload, response => {
-          console.log(`[response:${event}]`, response);
-
-          const { room } = response.data
-
-          setMembers(room.members)
-          setRoom(room)
-          setInRoom(true)
-        });
-      }
-
-      const onJoinRoom = async ({ name, memberId, roomCode }) => {
-        const response = await fetch(`http://localhost:3000/rooms/${roomCode}/join`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ memberId, name })
-        })
-        const result = await response.json()
-
-        console.log(result)
-
-        setMe(result.member)
-        setRoom(result.room)
-
-        localStorage.setItem("memberId", result.member.id)
-        localStorage.setItem("roomCode", result.room.code)
-        localStorage.setItem("secret", result.room.secret)
-
-        const event = "room.connect"
-        const payload = { memberId: result.member.id, roomCode: result.room.code }
-        console.log(`[triggered:${event}]`, payload)
-        socket.emit(event, payload, response => {
-          console.log(`[response:${event}]`, response);
-
-          const { room } = response.data
-
-          setMembers(room.members)
-          setRoom(room)
-          setInRoom(true)
-        });
-      }
-
-      const onClickToggleLock = () => {
-        const event = "room.lock"
-        console.log(`[triggered:${event}]`)
-        socket.emit(event, { roomCode: room.code, secret: localStorage.getItem("secret") }, response => {
-          console.log(`[response:${event}]`, response);
-
-          const { room } = response.data
-
-          setRoom(room)
-          setMembers(room.members)
-        })
-      }
-
-      const onClickKick = ({ memberId }) => {
-        const event = "room.kick_user"
-        const payload = { roomCode: room.code, secret: localStorage.getItem("secret"), memberId }
-        console.log(`[triggered:${event}]`, payload)
-        socket.emit(event, payload, response => {
-          console.log(`[response:${event}]`, response);
-
-          const { room } = response.data
-
-          setRoom(room)
-          setMembers(room.members)
-        });
-      }
-
-      const onLeaveRoom = () => {
-        const event = "room.leave"
-        const payload = { roomCode: room.code }
-        console.log(`[triggered:${event}]`, payload)
-        socket.emit(event, payload, response => {
-          console.log(`[response:${event}]`, response);
-
-          setRoom({})
-          setMembers([])
-          setInRoom(false)
-        });
-      }
-
-      const onClickMakeHost = ({ memberId }) => {
-        const event = "room.update_host"
-        const payload = { memberId, roomCode: room.code, secret: localStorage.getItem("secret") }
-
-        console.log(`[triggered:${event}]`, payload)
-        socket.emit(event, payload, response => {
-          console.log(`[response:${event}]`, response);
-
-          const { data } = response
-
-          setRoom(data.room)
-          setMembers(data.room.members)
-        });
-      }
-
-
-      return (<div>
-        <h1>NestJS Websocket Starter</h1>
-        <div>{isConnected ? "Connected" : "Disconnected"}</div>
-        {inRoom ? <RoomContainer me={me} onClickKick={onClickKick} onClickLeave={onLeaveRoom} onClickMakeHost={onClickMakeHost} onClickToggleLock={onClickToggleLock} room={room} members={members} /> : <KickoffContainer onCreateRoom={onCreateRoom} onJoinRoom={onJoinRoom} />}
-      </div>)
-    }
-
-    const KickoffContainer = ({ onCreateRoom, onJoinRoom }) => {
-      const [name, setName] = useState(localStorage.getItem("name") ?? "")
-      const [roomCode, setRoomCode] = useState(localStorage.getItem("roomCode") ?? "")
-      const isValidName = /^[a-zA-Z ]{2,}$/.test(name)
-      const isValidRoomCode = /^[A-Z0-9]{4}$/.test(roomCode)
-
-      const handleRoomCodeChange = (event) => {
-        const value = event.target.value;
-        setRoomCode(value.toUpperCase());
-      };
-
-      const memberId = localStorage.getItem("memberId")
-
-      const onSetName = (event) => {
-        const name = event.target.value
-        setName(name)
-        localStorage.setItem("name", name)
-      }
-
-      const onClickCreateRoom = () => {
-        onCreateRoom({ name, memberId })
-      }
-      const onClickJoinRoom = () => {
-        onJoinRoom({ name, memberId, roomCode })
-      }
-      const onSubmit = (e) => e.preventDefault()
-
-      return (<form onSubmit={onSubmit}>
-        <input onChange={onSetName} maxLength={20} minLength={2} placeholder="Enter your name" value={name} />
-        <button disabled={!isValidName} onClick={onClickCreateRoom}>Create room</button>
-        <input maxLength={4} minLength={4} onChange={handleRoomCodeChange} pattern="^[A-Z0-9]{4}$" placeholder="Enter a room code" value={roomCode} />
-        <button disabled={!isValidName || !isValidRoomCode} onClick={onClickJoinRoom}>Join room</button>
-      </form>)
-    }
-
-    const RoomMembers = ({ hostId, me, onClickKick, onClickLeave, onClickMakeHost, members }) => {
-      return (<table><tbody>{members.map((member) => (<tr key={member.id}>
-        <td><span className={member.connected ? "dot connected" : "dot"}></span> <span className={member.id === me.id ? "bold" : ""}>{member.name}</span> ({member.isHost ? "Host" : "Participant"})</td>
-        <td><button onClick={() => onClickMakeHost({ memberId: member.id })}>Make host</button></td>
-        <td><button onClick={() => onClickKick({ memberId: member.id })}>Kick</button></td>
-        {
-          member.id === me.id &&
-          <>
-            <td>{<button onClick={onClickLeave}>Leave</button>}</td>
-          </>
-        }
-      </tr>)
-      )}</tbody></table>)
-    }
-
-    const RoomContainer = ({ me, onClickKick, onClickLeave, onClickMakeHost, onClickToggleLock, room, members }) => {
-      return <>
-        <h1>Room code: {room.code}</h1>
-        <button onClick={onClickToggleLock}>{room.isLocked ? "Unlock" : "Lock"} room</button>
-        <button onClick={onClickLeave}>Leave room</button>
-        <RoomMembers hostId={room.hostId} me={me} onClickKick={onClickKick} onClickLeave={onClickLeave} onClickMakeHost={onClickMakeHost} onClickToggleLock={onClickToggleLock} members={members} />
-      </>
-    }
-
-    ReactDOM.render(<Container />, document.getElementById("root"));
-  </script>
-
-  <!-- This is what supports JSX compilation (and other transformations) -->
-  <script src="https://unpkg.com/@babel/standalone@7.10.3/babel.min.js"></script>
-
-  <!-- These are for React -->
+  <!-- React & Babel -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react/17.0.2/umd/react.development.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/17.0.2/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.10.3/babel.min.js"></script>
+
+  <script type="text/babel" data-presets="react,stage-3">
+    const { useState, useEffect, useCallback, useRef } = React;
+
+    const API_URL = 'http://localhost:3000';
+
+    const App = () => {
+      const [socket, setSocket] = useState(null);
+      const [isConnected, setIsConnected] = useState(false);
+      const [room, setRoom] = useState(null);
+      const [members, setMembers] = useState([]);
+      const [me, setMe] = useState(null);
+      const [token, setToken] = useState(localStorage.getItem('token'));
+      const [logs, setLogs] = useState([]);
+
+      const addLog = useCallback((type, message, data = null) => {
+        const entry = { type, message, data, time: new Date().toLocaleTimeString() };
+        setLogs(prev => [entry, ...prev].slice(0, 50));
+        console.log(`[${type}] ${message}`, data || '');
+      }, []);
+
+      // Fetch room info
+      const fetchRoom = useCallback(async (code) => {
+        try {
+          const res = await fetch(`${API_URL}/rooms/${code}`);
+          if (!res.ok) throw new Error('Room not found');
+          const data = await res.json();
+          setRoom(data);
+          addLog('info', 'Fetched room info', data);
+          return data;
+        } catch (err) {
+          addLog('error', 'Failed to fetch room', err.message);
+          return null;
+        }
+      }, [addLog]);
+
+      // Connect WebSocket
+      const connectSocket = useCallback((authToken, roomCode) => {
+        if (socket) {
+          socket.disconnect();
+        }
+
+        const newSocket = io(`${API_URL}/rooms`, {
+          auth: { token: authToken }
+        });
+
+        newSocket.on('connect', () => {
+          setIsConnected(true);
+          addLog('success', 'WebSocket connected');
+        });
+
+        // Receive initial room state on connection
+        newSocket.on('room:state', ({ room, users }) => {
+          addLog('info', 'Received room state', { room: room.code, userCount: users.length });
+          setRoom(room);
+          setMembers(users);
+        });
+
+        newSocket.on('disconnect', (reason) => {
+          setIsConnected(false);
+          addLog('warn', 'WebSocket disconnected', reason);
+        });
+
+        newSocket.on('connect_error', (err) => {
+          addLog('error', 'Connection error', err.message);
+          setIsConnected(false);
+        });
+
+        // Room events
+        newSocket.on('room:closed', ({ reason }) => {
+          addLog('warn', 'Room closed', reason);
+          handleRoomExit(`Room closed: ${reason}`);
+        });
+
+        newSocket.on('room:host_updated', ({ hostId }) => {
+          addLog('info', 'Host updated', hostId);
+          setRoom(prev => prev ? { ...prev, hostId } : null);
+        });
+
+        newSocket.on('room:lock_toggled', ({ isLocked }) => {
+          addLog('info', `Room ${isLocked ? 'locked' : 'unlocked'}`);
+          setRoom(prev => prev ? { ...prev, isLocked } : null);
+        });
+
+        // User events
+        newSocket.on('user:connected', ({ user }) => {
+          addLog('success', 'User connected', user.displayName);
+          setMembers(prev => {
+            const exists = prev.find(m => m.id === user.id);
+            if (exists) {
+              return prev.map(m => m.id === user.id ? user : m);
+            }
+            return [...prev, user];
+          });
+        });
+
+        newSocket.on('user:disconnected', ({ user }) => {
+          addLog('warn', 'User disconnected', user.displayName);
+          setMembers(prev => prev.map(m => m.id === user.id ? user : m));
+        });
+
+        newSocket.on('user:kicked', () => {
+          addLog('error', 'You were kicked from the room');
+          handleRoomExit('You were kicked from the room');
+        });
+
+        newSocket.on('user:left', ({ userId, reason }) => {
+          addLog('info', `User left (${reason})`, userId);
+          setMembers(prev => prev.filter(m => m.id !== userId));
+        });
+
+        // Error events
+        newSocket.on('error:room', ({ code, message }) => {
+          addLog('error', `Room error: ${code}`, message);
+        });
+
+        setSocket(newSocket);
+        return newSocket;
+      }, [socket, addLog, fetchRoom]);
+
+      const handleRoomExit = (message) => {
+        alert(message);
+        localStorage.removeItem('token');
+        localStorage.removeItem('roomCode');
+        setToken(null);
+        setRoom(null);
+        setMembers([]);
+        setMe(null);
+        setIsConnected(false);
+        if (socket) socket.disconnect();
+      };
+
+      // Create room
+      const createRoom = async (displayName, maxUsers) => {
+        try {
+          const res = await fetch(`${API_URL}/rooms`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ displayName, maxUsers: maxUsers || undefined })
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.message || 'Failed to create room');
+          }
+          const { roomCode, token: newToken } = await res.json();
+
+          localStorage.setItem('token', newToken);
+          localStorage.setItem('roomCode', roomCode);
+          setToken(newToken);
+
+          // Decode token to get userId
+          const payload = JSON.parse(atob(newToken.split('.')[1]));
+          setMe({ id: payload.userId, displayName, isConnected: false });
+
+          addLog('success', 'Room created', roomCode);
+          connectSocket(newToken, roomCode);
+        } catch (err) {
+          addLog('error', 'Create room failed', err.message);
+          alert(err.message);
+        }
+      };
+
+      // Join room
+      const joinRoom = async (roomCode, displayName) => {
+        try {
+          const res = await fetch(`${API_URL}/rooms/${roomCode}/join`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ displayName })
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.message || 'Failed to join room');
+          }
+          const { token: newToken } = await res.json();
+
+          localStorage.setItem('token', newToken);
+          localStorage.setItem('roomCode', roomCode);
+          setToken(newToken);
+
+          const payload = JSON.parse(atob(newToken.split('.')[1]));
+          setMe({ id: payload.userId, displayName, isConnected: false });
+
+          addLog('success', 'Joined room', roomCode);
+          connectSocket(newToken, roomCode);
+        } catch (err) {
+          addLog('error', 'Join room failed', err.message);
+          alert(err.message);
+        }
+      };
+
+      // Rejoin room
+      const rejoinRoom = async () => {
+        const savedToken = localStorage.getItem('token');
+        const savedRoomCode = localStorage.getItem('roomCode');
+
+        if (!savedToken || !savedRoomCode) {
+          addLog('warn', 'No saved session to rejoin');
+          return;
+        }
+
+        try {
+          const res = await fetch(`${API_URL}/rooms/${savedRoomCode}/rejoin`, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${savedToken}` }
+          });
+          if (!res.ok) {
+            const err = await res.json();
+            throw new Error(err.message || 'Failed to rejoin room');
+          }
+          const { token: newToken, roomCode } = await res.json();
+
+          localStorage.setItem('token', newToken);
+          setToken(newToken);
+
+          const payload = JSON.parse(atob(newToken.split('.')[1]));
+          setMe({ id: payload.userId, isConnected: false });
+
+          addLog('success', 'Rejoined room', roomCode);
+          connectSocket(newToken, roomCode);
+        } catch (err) {
+          addLog('error', 'Rejoin failed', err.message);
+          localStorage.removeItem('token');
+          localStorage.removeItem('roomCode');
+          setToken(null);
+        }
+      };
+
+      // WebSocket actions
+      const leaveRoom = () => {
+        if (!socket) return;
+        socket.emit('room:leave');
+        addLog('info', 'Leaving room...');
+        handleRoomExit('You left the room');
+      };
+
+      const closeRoom = () => {
+        if (!socket) return;
+        socket.emit('room:close');
+        addLog('info', 'Closing room...');
+      };
+
+      const toggleLock = () => {
+        if (!socket) return;
+        socket.emit('room:toggle_lock');
+        addLog('info', 'Toggling room lock...');
+      };
+
+      const kickUser = (kickUserId) => {
+        if (!socket) return;
+        socket.emit('room:kick', { kickUserId });
+        addLog('info', 'Kicking user...', kickUserId);
+      };
+
+      const transferHost = (newHostId) => {
+        if (!socket) return;
+        socket.emit('room:transfer_host', { newHostId });
+        addLog('info', 'Transferring host...', newHostId);
+      };
+
+      const isHost = room && me && room.hostId === me.id;
+
+      return (
+        <div className="app">
+          <header>
+            <h1>🔌 NestJS WebSocket Room Demo</h1>
+            <div className="status">
+              <span className={`indicator ${isConnected ? 'connected' : ''}`}></span>
+              {isConnected ? 'Connected' : 'Disconnected'}
+            </div>
+          </header>
+
+          <main>
+            {!room ? (
+              <LobbyView
+                onCreateRoom={createRoom}
+                onJoinRoom={joinRoom}
+                onRejoinRoom={rejoinRoom}
+                hasSavedSession={!!localStorage.getItem('token')}
+              />
+            ) : (
+              <RoomView
+                room={room}
+                members={members}
+                me={me}
+                isHost={isHost}
+                onLeave={leaveRoom}
+                onClose={closeRoom}
+                onToggleLock={toggleLock}
+                onKick={kickUser}
+                onTransferHost={transferHost}
+              />
+            )}
+
+            <EventLog logs={logs} />
+          </main>
+        </div>
+      );
+    };
+
+    const LobbyView = ({ onCreateRoom, onJoinRoom, onRejoinRoom, hasSavedSession }) => {
+      const [displayName, setDisplayName] = useState(localStorage.getItem('displayName') || '');
+      const [roomCode, setRoomCode] = useState('');
+      const [maxUsers, setMaxUsers] = useState('');
+
+      const handleNameChange = (e) => {
+        setDisplayName(e.target.value);
+        localStorage.setItem('displayName', e.target.value);
+      };
+
+      const handleCreate = (e) => {
+        e.preventDefault();
+        if (displayName.trim().length >= 2) {
+          onCreateRoom(displayName.trim(), maxUsers ? parseInt(maxUsers) : null);
+        }
+      };
+
+      const handleJoin = (e) => {
+        e.preventDefault();
+        if (displayName.trim().length >= 2 && roomCode.length >= 4) {
+          onJoinRoom(roomCode.toUpperCase(), displayName.trim());
+        }
+      };
+
+      return (
+        <div className="lobby">
+          <div className="card">
+            <h2>Create Room</h2>
+            <form onSubmit={handleCreate}>
+              <input
+                type="text"
+                placeholder="Display Name"
+                value={displayName}
+                onChange={handleNameChange}
+                minLength={2}
+                maxLength={20}
+                required
+              />
+              <input
+                type="number"
+                placeholder="Max Users (optional)"
+                value={maxUsers}
+                onChange={(e) => setMaxUsers(e.target.value)}
+                min={2}
+                max={100}
+              />
+              <button type="submit" disabled={displayName.trim().length < 2}>
+                Create Room
+              </button>
+            </form>
+          </div>
+
+          <div className="card">
+            <h2>Join Room</h2>
+            <form onSubmit={handleJoin}>
+              <input
+                type="text"
+                placeholder="Display Name"
+                value={displayName}
+                onChange={handleNameChange}
+                minLength={2}
+                maxLength={20}
+                required
+              />
+              <input
+                type="text"
+                placeholder="Room Code"
+                value={roomCode}
+                onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
+                maxLength={10}
+                required
+              />
+              <button type="submit" disabled={displayName.trim().length < 2 || roomCode.length < 4}>
+                Join Room
+              </button>
+            </form>
+          </div>
+
+          {hasSavedSession && (
+            <div className="card rejoin">
+              <h2>Rejoin Session</h2>
+              <p>You have a saved session. Click to rejoin.</p>
+              <button onClick={onRejoinRoom}>Rejoin Room</button>
+              <button className="secondary" onClick={() => {
+                localStorage.removeItem('token');
+                localStorage.removeItem('roomCode');
+                window.location.reload();
+              }}>Clear Session</button>
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    const RoomView = ({ room, members, me, isHost, onLeave, onClose, onToggleLock, onKick, onTransferHost }) => {
+      return (
+        <div className="room">
+          <div className="room-header">
+            <div className="room-info">
+              <h2>Room: <span className="code">{room.code}</span></h2>
+              <div className="badges">
+                <span className={`badge ${room.isLocked ? 'locked' : 'unlocked'}`}>
+                  {room.isLocked ? '🔒 Locked' : '🔓 Unlocked'}
+                </span>
+                <span className="badge state">{room.state}</span>
+                {room.maxUsers && <span className="badge">Max: {room.maxUsers}</span>}
+              </div>
+            </div>
+            <div className="room-actions">
+              {isHost && (
+                <>
+                  <button onClick={onToggleLock}>
+                    {room.isLocked ? '🔓 Unlock' : '🔒 Lock'}
+                  </button>
+                  <button className="danger" onClick={onClose}>
+                    ❌ Close Room
+                  </button>
+                </>
+              )}
+              <button className="secondary" onClick={onLeave}>
+                🚪 Leave
+              </button>
+            </div>
+          </div>
+
+          <div className="members-section">
+            <h3>Members ({members.length}{room.maxUsers ? `/${room.maxUsers}` : ''})</h3>
+            <div className="members-list">
+              {members.map(member => (
+                <div key={member.id} className={`member ${member.id === me?.id ? 'me' : ''}`}>
+                  <div className="member-info">
+                    <span className={`indicator ${member.isConnected ? 'connected' : ''}`}></span>
+                    <span className="name">{member.displayName}</span>
+                    {room.hostId === member.id && <span className="host-badge">👑 Host</span>}
+                    {member.id === me?.id && <span className="you-badge">(You)</span>}
+                  </div>
+                  {isHost && member.id !== me?.id && (
+                    <div className="member-actions">
+                      <button className="small" onClick={() => onTransferHost(member.id)}>
+                        👑 Make Host
+                      </button>
+                      <button className="small danger" onClick={() => onKick(member.id)}>
+                        🚫 Kick
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    const EventLog = ({ logs }) => {
+      const [isExpanded, setIsExpanded] = useState(true);
+
+      const getTypeColor = (type) => {
+        switch (type) {
+          case 'success': return '#10b981';
+          case 'error': return '#ef4444';
+          case 'warn': return '#f59e0b';
+          default: return '#6b7280';
+        }
+      };
+
+      return (
+        <div className="event-log">
+          <div className="log-header" onClick={() => setIsExpanded(!isExpanded)}>
+            <h3>📋 Event Log</h3>
+            <span>{isExpanded ? '▼' : '▶'}</span>
+          </div>
+          {isExpanded && (
+            <div className="log-entries">
+              {logs.length === 0 && <div className="log-empty">No events yet...</div>}
+              {logs.map((log, i) => (
+                <div key={i} className="log-entry">
+                  <span className="log-time">{log.time}</span>
+                  <span className="log-type" style={{ color: getTypeColor(log.type) }}>
+                    [{log.type.toUpperCase()}]
+                  </span>
+                  <span className="log-message">{log.message}</span>
+                  {log.data && (
+                    <span className="log-data">
+                      {typeof log.data === 'object' ? JSON.stringify(log.data) : log.data}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      );
+    };
+
+    ReactDOM.render(<App />, document.getElementById('root'));
+  </script>
 
   <style>
-    .dot {
-      display: inline-block;
+    :root {
+      --bg: #0f172a;
+      --card-bg: #1e293b;
+      --border: #334155;
+      --text: #f1f5f9;
+      --text-muted: #94a3b8;
+      --primary: #3b82f6;
+      --primary-hover: #2563eb;
+      --success: #10b981;
+      --danger: #ef4444;
+      --warning: #f59e0b;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    .app {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 20px 0;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 30px;
+    }
+
+    header h1 {
+      font-size: 1.5rem;
+      font-weight: 600;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+
+    .indicator {
       width: 10px;
       height: 10px;
       border-radius: 50%;
-      background-color: red;
+      background: var(--danger);
+      transition: background 0.3s;
     }
 
-    .dot.connected {
-      background-color: green;
+    .indicator.connected {
+      background: var(--success);
+      box-shadow: 0 0 10px var(--success);
     }
 
-    .bold {
-      font-weight: bold;
+    /* Lobby */
+    .lobby {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 20px;
+    }
+
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+    }
+
+    .card h2 {
+      font-size: 1.2rem;
+      margin-bottom: 16px;
+      color: var(--text);
+    }
+
+    .card form {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    .card.rejoin {
+      grid-column: 1 / -1;
+      text-align: center;
+    }
+
+    .card.rejoin p {
+      color: var(--text-muted);
+      margin-bottom: 16px;
+    }
+
+    .card.rejoin button {
+      margin: 0 8px;
+    }
+
+    input {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      transition: border-color 0.2s;
+    }
+
+    input:focus {
+      border-color: var(--primary);
+    }
+
+    input::placeholder {
+      color: var(--text-muted);
+    }
+
+    button {
+      background: var(--primary);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      padding: 12px 20px;
+      font-size: 1rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s, opacity 0.2s;
+    }
+
+    button:hover:not(:disabled) {
+      background: var(--primary-hover);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    button.secondary {
+      background: var(--border);
+    }
+
+    button.secondary:hover:not(:disabled) {
+      background: #475569;
+    }
+
+    button.danger {
+      background: var(--danger);
+    }
+
+    button.danger:hover:not(:disabled) {
+      background: #dc2626;
+    }
+
+    button.small {
+      padding: 6px 12px;
+      font-size: 0.85rem;
+    }
+
+    /* Room */
+    .room {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .room-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 20px;
+      border-bottom: 1px solid var(--border);
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .room-info h2 {
+      font-size: 1.3rem;
+      margin-bottom: 8px;
+    }
+
+    .room-info .code {
+      font-family: 'Courier New', monospace;
+      background: var(--bg);
+      padding: 4px 12px;
+      border-radius: 6px;
+      letter-spacing: 2px;
+    }
+
+    .badges {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .badge {
+      background: var(--bg);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .badge.locked {
+      color: var(--warning);
+    }
+
+    .badge.unlocked {
+      color: var(--success);
+    }
+
+    .badge.state {
+      color: var(--primary);
+    }
+
+    .room-actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .members-section {
+      padding: 20px;
+    }
+
+    .members-section h3 {
+      margin-bottom: 16px;
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .members-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .member {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: var(--bg);
+      padding: 12px 16px;
+      border-radius: 8px;
+      transition: background 0.2s;
+    }
+
+    .member.me {
+      border: 1px solid var(--primary);
+    }
+
+    .member-info {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .member-info .name {
+      font-weight: 500;
+    }
+
+    .host-badge {
+      font-size: 0.8rem;
+      color: var(--warning);
+    }
+
+    .you-badge {
+      font-size: 0.8rem;
+      color: var(--primary);
+    }
+
+    .member-actions {
+      display: flex;
+      gap: 6px;
+    }
+
+    /* Event Log */
+    .event-log {
+      margin-top: 30px;
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+
+    .log-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 20px;
+      cursor: pointer;
+      user-select: none;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .log-header h3 {
+      font-size: 1rem;
+      font-weight: 500;
+    }
+
+    .log-entries {
+      max-height: 300px;
+      overflow-y: auto;
+      padding: 12px;
+    }
+
+    .log-empty {
+      text-align: center;
+      color: var(--text-muted);
+      padding: 20px;
+    }
+
+    .log-entry {
+      font-family: 'Courier New', monospace;
+      font-size: 0.85rem;
+      padding: 6px 8px;
+      border-radius: 4px;
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .log-entry:hover {
+      background: var(--bg);
+    }
+
+    .log-time {
+      color: var(--text-muted);
+    }
+
+    .log-type {
+      font-weight: 600;
+      min-width: 70px;
+    }
+
+    .log-message {
+      color: var(--text);
+    }
+
+    .log-data {
+      color: var(--text-muted);
+      word-break: break-all;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--bg);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: var(--border);
+      border-radius: 4px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    @media (max-width: 600px) {
+      .app {
+        padding: 12px;
+      }
+
+      header {
+        flex-direction: column;
+        gap: 12px;
+        text-align: center;
+      }
+
+      .room-header {
+        flex-direction: column;
+      }
+
+      .room-actions {
+        width: 100%;
+      }
+
+      .room-actions button {
+        flex: 1;
+      }
     }
   </style>
 </body>

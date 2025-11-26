@@ -1,77 +1,93 @@
 import type { ArgumentsHost } from "@nestjs/common";
+import type { Socket } from "socket.io";
 
 import {
     InvalidOperationException,
-    MemberNotFoundException,
     RoomNotFoundException,
     UnauthorizedHostActionException,
+    UserNotFoundException,
 } from "../common/exceptions/room.exceptions";
-import { RoomErrorCode, RoomEvent } from "../events/model/room.event";
+import { mapDomainExceptionToRoomErrorEvent } from "../events/mapping/map-domain-exception-to-room-error-event";
+import { RoomErrorCode } from "../events/model/room.event";
 import { WsDomainExceptionFilter } from "./ws-exception.filter";
+
+jest.mock("../events/mapping/map-domain-exception-to-room-error-event");
+
+const mockMapDomainException = mapDomainExceptionToRoomErrorEvent as jest.MockedFunction<
+    typeof mapDomainExceptionToRoomErrorEvent
+>;
 
 describe("WsDomainExceptionFilter", () => {
     let filter: WsDomainExceptionFilter;
-    let mockCallback: jest.Mock;
+    let mockSocket: jest.Mocked<Socket>;
     let mockHost: ArgumentsHost;
 
     beforeEach(() => {
         filter = new WsDomainExceptionFilter();
-        mockCallback = jest.fn();
+        mockSocket = {
+            emit: jest.fn(),
+        } as unknown as jest.Mocked<Socket>;
         mockHost = {
-            getArgByIndex: jest.fn().mockReturnValue(mockCallback),
+            switchToWs: jest.fn().mockReturnValue({
+                getClient: jest.fn().mockReturnValue(mockSocket),
+            }),
         } as unknown as ArgumentsHost;
+
+        jest.clearAllMocks();
+    });
+
+    test("should get WebSocket client from host", () => {
+        const exception = new RoomNotFoundException();
+        mockMapDomainException.mockReturnValue({
+            code: RoomErrorCode.RoomNotFound,
+            message: "Room not found",
+        });
+
+        filter.catch(exception, mockHost);
+
+        expect(mockHost.switchToWs).toHaveBeenCalled();
+    });
+
+    test("should call mapDomainExceptionToRoomErrorEvent with the exception", () => {
+        const exception = new UserNotFoundException("User not found");
+        mockMapDomainException.mockReturnValue({
+            code: RoomErrorCode.UserNotFound,
+            message: "User not found",
+        });
+
+        filter.catch(exception, mockHost);
+
+        expect(mockMapDomainException).toHaveBeenCalledWith(exception);
+    });
+
+    test("should emit room:error event with mapped error", () => {
+        const exception = new UnauthorizedHostActionException();
+        const mappedError = { code: RoomErrorCode.NotHost, message: "Not the host" };
+        mockMapDomainException.mockReturnValue(mappedError);
+
+        filter.catch(exception, mockHost);
+
+        expect(mockSocket.emit).toHaveBeenCalledWith("room:error", mappedError);
     });
 
     test.each([
-        {
-            name: "RoomNotFoundException",
-            exception: new RoomNotFoundException("Room does not exist"),
-            expectedCode: RoomErrorCode.RoomNotFound,
-            expectedMessage: "Room does not exist",
-        },
-        {
-            name: "MemberNotFoundException",
-            exception: new MemberNotFoundException("Member does not exist"),
-            expectedCode: RoomErrorCode.MemberNotFound,
-            expectedMessage: "Member does not exist",
-        },
+        { name: "RoomNotFoundException", exception: new RoomNotFoundException() },
+        { name: "UserNotFoundException", exception: new UserNotFoundException() },
         {
             name: "UnauthorizedHostActionException",
             exception: new UnauthorizedHostActionException(),
-            expectedCode: RoomErrorCode.NotHost,
-            expectedMessage: "Member is not host of room",
         },
         {
             name: "InvalidOperationException",
-            exception: new InvalidOperationException(
-                "Cannot kick yourself",
-                RoomErrorCode.CannotKickSelf,
-            ),
-            expectedCode: RoomErrorCode.CannotKickSelf,
-            expectedMessage: "Cannot kick yourself",
+            exception: new InvalidOperationException("error", RoomErrorCode.CannotKickSelf),
         },
-    ])(
-        "should return RoomErrorEvent with $expectedCode for $name",
-        ({ exception, expectedCode, expectedMessage }) => {
-            filter.catch(exception, mockHost);
+    ])("should handle $name", ({ exception }) => {
+        const mappedError = { code: RoomErrorCode.UnknownError, message: "test" };
+        mockMapDomainException.mockReturnValue(mappedError);
 
-            expect(mockCallback).toHaveBeenCalledWith({
-                opCode: RoomEvent.Error,
-                data: {
-                    code: expectedCode,
-                    message: expectedMessage,
-                },
-            });
-        },
-    );
+        filter.catch(exception, mockHost);
 
-    test("should not call callback if it is not a function", () => {
-        mockHost = {
-            getArgByIndex: jest.fn().mockReturnValue(undefined),
-        } as unknown as ArgumentsHost;
-
-        const exception = new RoomNotFoundException();
-
-        expect(() => filter.catch(exception, mockHost)).not.toThrow();
+        expect(mockMapDomainException).toHaveBeenCalledWith(exception);
+        expect(mockSocket.emit).toHaveBeenCalledWith("room:error", mappedError);
     });
 });

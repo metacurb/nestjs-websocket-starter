@@ -1,7 +1,5 @@
 services:
-    mongodb:
-        image: mongo:latest
-        environment:
-            - MONGODB_DATABASE="nestjs-websocket-starter"
+    redis:
+        image: redis:7-alpine
         ports:
-            - 27017:27017
+            - 6379:6379

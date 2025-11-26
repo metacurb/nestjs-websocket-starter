@@ -8,17 +8,17 @@ export class RoomNotFoundException extends Error {
     }
 }
 
-export class MemberNotFoundException extends Error {
-    readonly errorCode = RoomErrorCode.MemberNotFound;
-    constructor(message = "Member not found") {
+export class UserNotFoundException extends Error {
+    readonly errorCode = RoomErrorCode.UserNotFound;
+    constructor(message = "User not found") {
         super(message);
-        this.name = "MemberNotFoundException";
+        this.name = "UserNotFoundException";
     }
 }
 
 export class UnauthorizedHostActionException extends Error {
     readonly errorCode = RoomErrorCode.NotHost;
-    constructor(message = "Member is not host of room") {
+    constructor(message = "User is not host of room") {
         super(message);
         this.name = "UnauthorizedHostActionException";
     }
