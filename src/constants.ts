@@ -1,8 +1,6 @@
-export const ROOM_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
-export const ROOM_CODE_LENGTH = 4;
+export const ROOM_CODE_LENGTH = Number(process.env.ROOM_CODE_LENGTH!);
 
-export const ROOM_MIN_MAX_MEMBERS = 20;
-export const ROOM_MAX_MAX_MEMBERS = 2;
+export const ROOM_MAX_MEMBERS = Number(process.env.ROOM_MAX_MEMBERS!);
 
-export const USER_NAME_MAX_LENGTH = 20;
-export const USER_NAME_MIN_LENGTH = 2;
+export const USER_NAME_MAX_LENGTH = Number(process.env.USER_NAME_MAX_LENGTH!);
+export const USER_NAME_MIN_LENGTH = Number(process.env.USER_NAME_MIN_LENGTH!);

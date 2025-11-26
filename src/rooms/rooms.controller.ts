@@ -3,65 +3,47 @@ import {
     Controller,
     Get,
     HttpCode,
-    NotFoundException,
     Param,
     Post,
+    UseFilters,
     UsePipes,
     ValidationPipe,
 } from "@nestjs/common";
+import { from, map, Observable } from "rxjs";
+import { HttpDomainExceptionFilter } from "src/filters/http-exception.filter";
 
-import { CreateRoomInput } from "./dto/create-room.input";
-import { JoinRoomInput } from "./dto/join-room.input";
-import type { JoinedRoomDtoModel } from "./dto/joined-room-dto.model";
+import { CreateRoomInput } from "./model/dto/create-room.input";
+import { JoinRoomInput } from "./model/dto/join-room.input";
+import type { JoinedRoomDtoModel } from "./model/dto/joined-room-dto.model";
+import { RoomDtoModel } from "./model/dto/room-dto.model";
 import { RoomsService } from "./rooms.service";
-import { mapMemberToDto } from "./util/map-member-to-dto";
 import { mapRoomToDto } from "./util/map-room-to-dto";
+import { mapRoomToJoinedRoomDtoModel } from "./util/map-room-to-joined-room-dto.model";
 @UsePipes(new ValidationPipe())
+@UseFilters(HttpDomainExceptionFilter)
 @Controller("rooms")
 export class RoomsController {
     constructor(private readonly roomsService: RoomsService) {}
 
     @HttpCode(201)
     @Post()
-    async create(@Body() body: CreateRoomInput): Promise<JoinedRoomDtoModel> {
-        const room = await this.roomsService.create(body);
-        return {
-            member: mapMemberToDto(room.members[0]),
-            room: mapRoomToDto(room, true),
-        };
+    create(@Body() body: CreateRoomInput): Observable<JoinedRoomDtoModel> {
+        return from(this.roomsService.create(body)).pipe(
+            map((room) => mapRoomToJoinedRoomDtoModel(room, room.members[0])),
+        );
     }
 
     @HttpCode(200)
     @Post(":code/join")
-    async join(
-        @Body() body: JoinRoomInput,
-        @Param("code") code: string,
-    ): Promise<JoinedRoomDtoModel> {
-        const member = await this.roomsService.join(code, body);
-        if (!member) throw new NotFoundException("Room not found");
-
-        const room = await this.roomsService.getByMemberId(member._id.toHexString());
-        if (!room) throw new NotFoundException("Room not found");
-
-        return {
-            member: mapMemberToDto(member),
-            room: mapRoomToDto(room, member.isHost),
-        };
+    join(@Body() body: JoinRoomInput, @Param("code") code: string): Observable<JoinedRoomDtoModel> {
+        return from(this.roomsService.join(code, body)).pipe(
+            map((result) => mapRoomToJoinedRoomDtoModel(result.room, result.me)),
+        );
     }
 
     @HttpCode(200)
     @Get(":code")
-    async get(@Param("code") code: string) {
-        const room = await this.roomsService.getByCode(code);
-        if (!room) throw new NotFoundException("Room not found");
-
-        return mapRoomToDto(room, false);
-    }
-
-    @HttpCode(200)
-    @Get(":code/exists")
-    async exists(@Param("code") code: string) {
-        const room = await this.roomsService.getByCode(code);
-        return !!room;
+    get(@Param("code") code: string): Observable<RoomDtoModel> {
+        return from(this.roomsService.getByCode(code)).pipe(map((room) => mapRoomToDto(room)));
     }
 }

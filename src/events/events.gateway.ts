@@ -1,4 +1,4 @@
-import { UsePipes, ValidationPipe } from "@nestjs/common";
+import { UseFilters, UsePipes, ValidationPipe } from "@nestjs/common";
 import type { OnGatewayDisconnect } from "@nestjs/websockets";
 import {
     ConnectedSocket,
@@ -9,24 +9,25 @@ import {
 } from "@nestjs/websockets";
 import { PinoLogger } from "nestjs-pino";
 import { Server, Socket } from "socket.io";
+import { WsDomainExceptionFilter } from "src/filters/ws-exception.filter";
 
-import { UserException } from "../common/user.exception";
-import { EventsMessages } from "../model/events/events.messages";
+import { ConnectToRoomInput } from "../rooms/model/dto/connect-to-room.input";
+import { UpdateHostInput } from "../rooms/model/dto/give-host.input";
+import { KickUserInput } from "../rooms/model/dto/kick-user.input";
+import { LeaveRoomInput } from "../rooms/model/dto/leave-room.input";
+import { LockRoomInput } from "../rooms/model/dto/look-room.input";
+import { RoomsService } from "../rooms/rooms.service";
+import { mapRoomToDto } from "../rooms/util/map-room-to-dto";
+import { EventsMessages } from "./model/events.messages";
 import type {
     GatewayEvent,
     RoomExitedEvent,
     RoomHostChangeEvent,
     RoomUpdatedEvent,
-} from "../model/events/room.event";
-import { RoomEvent, RoomExitReason } from "../model/events/room.event";
-import { ConnectToRoomInput } from "../rooms/dto/connect-to-room.input";
-import { UpdateHostInput } from "../rooms/dto/give-host.input";
-import { KickUserInput } from "../rooms/dto/kick-user.input";
-import { LeaveRoomInput } from "../rooms/dto/leave-room.input";
-import { LockRoomInput } from "../rooms/dto/look-room.input";
-import { RoomsService } from "../rooms/rooms.service";
-import { mapRoomToDto } from "../rooms/util/map-room-to-dto";
+} from "./model/room.event";
+import { RoomErrorCode, RoomEvent, RoomExitReason } from "./model/room.event";
 
+@UseFilters(WsDomainExceptionFilter)
 @UsePipes(new ValidationPipe())
 @WebSocketGateway({
     cors: {
@@ -61,11 +62,6 @@ export class EventsGateway implements OnGatewayDisconnect {
         input: ConnectToRoomInput,
     ): Promise<GatewayEvent> {
         const result = await this.roomsService.connect(socket.id, input);
-
-        if (!result) {
-            const message = "Could not connect member to room";
-            throw new UserException(message);
-        }
 
         const { me, room } = result;
 
@@ -149,19 +145,31 @@ export class EventsGateway implements OnGatewayDisconnect {
         socket: Socket,
         @MessageBody()
         input: KickUserInput,
-    ): Promise<GatewayEvent | undefined> {
+    ): Promise<GatewayEvent> {
         const result = await this.roomsService.kick(socket.id, input);
 
         if (!result) {
-            // TODO handle failure (input did not match room reqs)
-            return;
+            return {
+                opCode: RoomEvent.Error,
+                roomCode: input.roomCode,
+                data: {
+                    code: RoomErrorCode.KickFailed,
+                    message: "Could not kick member from room",
+                },
+            };
         }
 
         const { kickedMember, room } = result;
 
         if (!room) {
-            // TODO handle failure (room was deleted)
-            return;
+            return {
+                opCode: RoomEvent.Error,
+                roomCode: input.roomCode,
+                data: {
+                    code: RoomErrorCode.RoomNotFound,
+                    message: "Room was deleted",
+                },
+            };
         }
 
         const update: RoomUpdatedEvent = {
@@ -192,12 +200,17 @@ export class EventsGateway implements OnGatewayDisconnect {
         socket: Socket,
         @MessageBody()
         oldSocketId: string,
-    ): Promise<GatewayEvent | undefined> {
+    ): Promise<GatewayEvent> {
         const result = await this.roomsService.reconnect(socket.id, oldSocketId);
 
         if (!result) {
-            // TODO handle failure
-            return;
+            return {
+                opCode: RoomEvent.Error,
+                data: {
+                    code: RoomErrorCode.ReconnectFailed,
+                    message: "Could not reconnect to room",
+                },
+            };
         }
 
         const { host, room } = result;
@@ -230,12 +243,18 @@ export class EventsGateway implements OnGatewayDisconnect {
         socket: Socket,
         @MessageBody()
         input: UpdateHostInput,
-    ): Promise<GatewayEvent | undefined> {
+    ): Promise<GatewayEvent> {
         const result = await this.roomsService.updateHost(socket.id, input);
 
         if (!result) {
-            // TODO handle failure
-            return;
+            return {
+                opCode: RoomEvent.Error,
+                roomCode: input.roomCode,
+                data: {
+                    code: RoomErrorCode.UpdateHostFailed,
+                    message: "Could not update host",
+                },
+            };
         }
 
         const { host, room } = result;
@@ -266,12 +285,18 @@ export class EventsGateway implements OnGatewayDisconnect {
         socket: Socket,
         @MessageBody()
         input: LockRoomInput,
-    ): Promise<GatewayEvent | undefined> {
+    ): Promise<GatewayEvent> {
         const result = await this.roomsService.lock(socket.id, input);
 
         if (!result) {
-            // TODO handle failure
-            return;
+            return {
+                opCode: RoomEvent.Error,
+                roomCode: input.roomCode,
+                data: {
+                    code: RoomErrorCode.LockFailed,
+                    message: "Could not lock/unlock room",
+                },
+            };
         }
 
         const { room } = result;
@@ -292,13 +317,12 @@ export class EventsGateway implements OnGatewayDisconnect {
     async handleDisconnect(
         @ConnectedSocket()
         socket: Socket,
-    ): Promise<GatewayEvent | undefined> {
+    ): Promise<GatewayEvent | null> {
         const result = await this.roomsService.disconnect(socket.id);
 
         if (!result) {
-            // TODO
-            // do nothing, user was not in any rooms
-            return;
+            // User was not in any rooms - this is expected behavior, not an error
+            return null;
         }
 
         const { room } = result;

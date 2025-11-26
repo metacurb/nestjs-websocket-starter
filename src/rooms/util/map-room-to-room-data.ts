@@ -1,4 +1,4 @@
-import type { RoomDataModel } from "../../model/room-data.model";
+import type { RoomDataModel } from "../model/room-data.model";
 import type { Room } from "../schema/room.schema";
 
 export const mapRoomToRoomData = (room: Room, socketId: string): RoomDataModel => ({

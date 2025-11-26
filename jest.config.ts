@@ -6,4 +6,8 @@ export default {
     collectCoverageFrom: ["**/*.(t|j)s"],
     coverageDirectory: "../coverage",
     testEnvironment: "node",
+    moduleNameMapper: {
+        "^nanoid$": "<rootDir>/../__mocks__/nanoid.ts",
+        "^src/(.*)$": "<rootDir>/$1",
+    },
 };

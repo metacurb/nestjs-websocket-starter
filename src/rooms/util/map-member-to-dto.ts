@@ -1,4 +1,4 @@
-import type { MemberDtoModel } from "../dto/member-dto.model";
+import type { MemberDtoModel } from "../model/dto/member-dto.model";
 import type { MemberDocument } from "../schema/member.schema";
 
 export const mapMemberToDto = (member: MemberDocument): MemberDtoModel => ({

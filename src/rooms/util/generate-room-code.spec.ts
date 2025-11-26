@@ -1,11 +1,13 @@
 import { customAlphabet } from "nanoid";
 
-import { ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH } from "../../constants";
 import { generateRoomCode } from "./generate-room-code";
 
 jest.mock("nanoid", () => ({
     customAlphabet: jest.fn(),
 }));
+
+const testRoomCodeAlphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+const testRoomCodeLength = 4;
 
 describe("generateRoomCode", () => {
     const mockGenerator = jest.fn();
@@ -19,9 +21,9 @@ describe("generateRoomCode", () => {
     test("should create an ID generator using the correct alphabet and ID length", () => {
         mockGenerator.mockReturnValue("foo");
 
-        const result = generateRoomCode();
+        const result = generateRoomCode(testRoomCodeAlphabet, testRoomCodeLength);
 
-        expect(customAlphabet).toHaveBeenCalledWith(ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH);
+        expect(customAlphabet).toHaveBeenCalledWith(testRoomCodeAlphabet, testRoomCodeLength);
         expect(result).toBe("foo");
     });
 
@@ -31,9 +33,9 @@ describe("generateRoomCode", () => {
             .mockReturnValueOnce("SH1T")
             .mockReturnValueOnce("foo");
 
-        const result = generateRoomCode();
+        const result = generateRoomCode(testRoomCodeAlphabet, testRoomCodeLength);
 
-        expect(customAlphabet).toHaveBeenCalledWith(ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH);
+        expect(customAlphabet).toHaveBeenCalledWith(testRoomCodeAlphabet, testRoomCodeLength);
         expect(mockGenerator).toHaveBeenCalledTimes(3);
         expect(result).toBe("foo");
     });

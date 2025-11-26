@@ -1,6 +1,6 @@
 import { IsAlphanumeric, IsMongoId, IsString, IsUppercase, Length } from "class-validator";
 
-import { ROOM_CODE_LENGTH } from "../../constants";
+import { ROOM_CODE_LENGTH } from "../../../constants";
 
 export class ConnectToRoomInput {
     @IsMongoId()

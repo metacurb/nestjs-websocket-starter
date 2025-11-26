@@ -20,7 +20,7 @@ export class RoomDtoModel {
     members: MemberDtoModel[];
 
     @Expose()
-    secret: string | null;
+    secret?: string;
 
     @Expose()
     state: RoomState;

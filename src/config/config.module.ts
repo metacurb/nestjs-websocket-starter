@@ -9,7 +9,13 @@ import { ConfigService } from "./config.service";
     imports: [
         NestConfigModule.forRoot({
             isGlobal: false,
-            validationSchema: joi.object({}),
+            validationSchema: joi.object({
+                ROOM_CODE_ALPHABET: joi.string().required(),
+                ROOM_CODE_LENGTH: joi.number().required(),
+                ROOM_MAX_MEMBERS: joi.number().required(),
+                USER_NAME_MAX_LENGTH: joi.number().required(),
+                USER_NAME_MIN_LENGTH: joi.number().required(),
+            }),
         }),
     ],
     providers: [ConfigService],

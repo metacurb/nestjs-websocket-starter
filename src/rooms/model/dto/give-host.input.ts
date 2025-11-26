@@ -7,9 +7,9 @@ import {
     MinLength,
 } from "class-validator";
 
-import { ROOM_CODE_LENGTH } from "../../constants";
+import { ROOM_CODE_LENGTH } from "../../../constants";
 
-export class KickUserInput {
+export class UpdateHostInput {
     @IsMongoId()
     memberId: string;
 
