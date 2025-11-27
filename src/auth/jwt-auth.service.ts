@@ -39,4 +39,8 @@ export class JwtAuthService {
 
         return authorizationHeader.replace("Bearer ", "").trim();
     }
+
+    sign(payload: JwtPayload): string {
+        return this.jwtService.sign(payload);
+    }
 }

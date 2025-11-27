@@ -1,9 +1,9 @@
 import { createMock } from "@golevelup/ts-jest";
-import { JwtService } from "@nestjs/jwt";
 import type { TestingModule } from "@nestjs/testing";
 import { Test } from "@nestjs/testing";
 import { PinoLogger } from "nestjs-pino";
 
+import { JwtAuthService } from "../auth/jwt-auth.service";
 import {
     InvalidOperationException,
     RoomNotFoundException,
@@ -19,7 +19,7 @@ import { RoomsService } from "./rooms.service";
 describe("RoomsService", () => {
     let service: RoomsService;
     let redisService: jest.Mocked<RedisService>;
-    let jwtService: jest.Mocked<JwtService>;
+    let jwtAuthService: jest.Mocked<JwtAuthService>;
     let configService: jest.Mocked<ConfigService>;
 
     const createMockUser = (overrides: Partial<UserStoreModel> = {}): UserStoreModel => ({
@@ -55,8 +55,8 @@ describe("RoomsService", () => {
                     useValue: createMock<RedisService>(),
                 },
                 {
-                    provide: JwtService,
-                    useValue: createMock<JwtService>(),
+                    provide: JwtAuthService,
+                    useValue: createMock<JwtAuthService>(),
                 },
                 {
                     provide: ConfigService,
@@ -67,7 +67,7 @@ describe("RoomsService", () => {
 
         service = module.get<RoomsService>(RoomsService);
         redisService = module.get(RedisService);
-        jwtService = module.get(JwtService);
+        jwtAuthService = module.get(JwtAuthService);
         configService = module.get(ConfigService);
     });
 
@@ -203,7 +203,7 @@ describe("RoomsService", () => {
         });
 
         test("should create a new room with host user", async () => {
-            jwtService.sign.mockReturnValue("test-token");
+            jwtAuthService.sign.mockReturnValue("test-token");
 
             const result = await service.create({
                 displayName: "Host User",
@@ -214,11 +214,11 @@ describe("RoomsService", () => {
             expect(result.token).toBe("test-token");
             expect(redisService.setJson).toHaveBeenCalledTimes(2);
             expect(redisService.sadd).toHaveBeenCalled();
-            expect(jwtService.sign).toHaveBeenCalled();
+            expect(jwtAuthService.sign).toHaveBeenCalled();
         });
 
         test("should set TTL on room, user, and members set", async () => {
-            jwtService.sign.mockReturnValue("test-token");
+            jwtAuthService.sign.mockReturnValue("test-token");
 
             const result = await service.create({
                 displayName: "Host User",
@@ -261,7 +261,7 @@ describe("RoomsService", () => {
             const room = createMockRoom();
             redisService.getJson.mockResolvedValueOnce(room);
             redisService.smembers.mockResolvedValueOnce(["host-123"]);
-            jwtService.sign.mockReturnValue("new-user-token");
+            jwtAuthService.sign.mockReturnValue("new-user-token");
 
             const result = await service.join("ABCD12", "New User");
 
@@ -275,7 +275,7 @@ describe("RoomsService", () => {
             const room = createMockRoom();
             redisService.getJson.mockResolvedValueOnce(room);
             redisService.smembers.mockResolvedValueOnce(["host-123"]);
-            jwtService.sign.mockReturnValue("new-user-token");
+            jwtAuthService.sign.mockReturnValue("new-user-token");
 
             await service.join("ABCD12", "New User");
 
@@ -314,7 +314,7 @@ describe("RoomsService", () => {
             const user = createMockUser();
             redisService.smembers.mockResolvedValueOnce(["user-123"]);
             redisService.getJson.mockResolvedValueOnce(user);
-            jwtService.sign.mockReturnValue("rejoin-token");
+            jwtAuthService.sign.mockReturnValue("rejoin-token");
 
             const result = await service.rejoin("ABCD12", "user-123");
 

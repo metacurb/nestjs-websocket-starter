@@ -1,12 +1,9 @@
 import type { RoomStoreModel } from "../../rooms/model/store/room-store.model";
 import type { UserStoreModel } from "../../rooms/model/store/user-store.model";
-import { RoomErrorCode } from "../../shared/errors/error-codes";
-
-export { RoomErrorCode };
+import type { RoomErrorCode } from "../../shared/errors/error-codes";
 
 export interface GatewayEvents {
     "error:room": RoomErrorEvent;
-    "error:user": UserErrorEvent;
     "room:closed": RoomClosedEvent;
     "room:host_updated": RoomHostUpdatedEvent;
     "room:lock_toggled": RoomLockToggledEvent;
@@ -17,14 +14,8 @@ export interface GatewayEvents {
     "user:left": UserLeftEvent;
 }
 
-enum UserErrorCode {}
-
 export interface RoomErrorEvent {
     code: RoomErrorCode;
-    message: string;
-}
-interface UserErrorEvent {
-    code: UserErrorCode;
     message: string;
 }
 

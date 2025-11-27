@@ -104,5 +104,16 @@ describe("JwtAuthService", () => {
             expect(result).toBe("token-with-spaces");
         });
     });
+
+    describe("sign", () => {
+        test("should sign payload and return token", () => {
+            jwtService.sign.mockReturnValue("signed-token");
+
+            const result = service.sign(mockPayload);
+
+            expect(result).toBe("signed-token");
+            expect(jwtService.sign).toHaveBeenCalledWith(mockPayload);
+        });
+    });
 });
 

@@ -1,8 +1,8 @@
 import { Injectable } from "@nestjs/common";
-import { JwtService } from "@nestjs/jwt";
 import { PinoLogger } from "nestjs-pino";
 import { v4 as uuid } from "uuid";
 
+import { JwtAuthService } from "../auth/jwt-auth.service";
 import {
     InvalidOperationException,
     RoomNotFoundException,
@@ -30,7 +30,7 @@ const createUser = (roomCode: string, displayName: string): UserStoreModel => ({
 export class RoomsService {
     constructor(
         private readonly configService: ConfigService,
-        private readonly jwtService: JwtService,
+        private readonly jwtAuthService: JwtAuthService,
         private readonly logger: PinoLogger,
         private readonly redisService: RedisService,
     ) {
@@ -94,7 +94,7 @@ export class RoomsService {
 
         return {
             roomCode: room.code,
-            token: this.jwtService.sign({ roomCode: room.code, userId: user.id }),
+            token: this.jwtAuthService.sign({ roomCode: room.code, userId: user.id }),
         };
     }
 
@@ -122,7 +122,7 @@ export class RoomsService {
 
         return {
             roomCode: room.code,
-            token: this.jwtService.sign({ roomCode: room.code, userId: user.id }),
+            token: this.jwtAuthService.sign({ roomCode: room.code, userId: user.id }),
         };
     }
 
@@ -137,7 +137,7 @@ export class RoomsService {
 
         return {
             roomCode,
-            token: this.jwtService.sign({ roomCode, userId }),
+            token: this.jwtAuthService.sign({ roomCode, userId }),
         };
     }
 
