@@ -5,8 +5,8 @@ import {
     InvalidOperationException,
     RoomNotFoundException,
     UnauthorizedHostActionException,
-    UserNotFoundException,
 } from "../../rooms/exceptions/room.exceptions";
+import { UserNotFoundException } from "../../users/exceptions/user.exceptions";
 import { mapDomainExceptionToRoomErrorEvent } from "../../events/mapping/map-domain-exception-to-room-error-event";
 
 const DOMAIN_EXCEPTIONS = [

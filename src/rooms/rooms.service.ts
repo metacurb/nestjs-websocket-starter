@@ -4,13 +4,13 @@ import { PinoLogger } from "nestjs-pino";
 import { JwtAuthService } from "../auth/jwt-auth.service";
 import { ConfigService } from "../config/config.service";
 import { RoomErrorCode } from "../shared/errors/error-codes";
+import { UserNotFoundException } from "../users/exceptions/user.exceptions";
 import type { UserStoreModel } from "../users/model/user-store.model";
 import { UsersService } from "../users/users.service";
 import {
     InvalidOperationException,
     RoomNotFoundException,
     UnauthorizedHostActionException,
-    UserNotFoundException,
 } from "./exceptions/room.exceptions";
 import { RoomSessionDtoModel } from "./model/dto/room-session-dto.model";
 import type { CreateRoomInput } from "./model/input/create-room.input";
@@ -110,8 +110,7 @@ export class RoomsService {
         const members = await this.getRoomMembers(roomCode);
         if (!members.includes(userId)) throw new UserNotFoundException();
 
-        const user = await this.usersService.findById(userId);
-        if (!user) throw new UserNotFoundException();
+        await this.usersService.getById(userId);
 
         this.logger.info({ roomCode, userId }, "User rejoined room");
 
@@ -170,11 +169,7 @@ export class RoomsService {
             );
         }
 
-        const memberToKick = await this.usersService.findById(memberToKickUserId);
-
-        if (!memberToKick) {
-            throw new UserNotFoundException();
-        }
+        const memberToKick = await this.usersService.getById(memberToKickUserId);
 
         await this.usersService.delete(memberToKickUserId);
         await this.roomsRepository.removeMember(roomCode, memberToKick.id);

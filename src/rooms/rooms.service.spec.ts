@@ -5,13 +5,13 @@ import { PinoLogger } from "nestjs-pino";
 
 import { JwtAuthService } from "../auth/jwt-auth.service";
 import { ConfigService } from "../config/config.service";
+import { UserNotFoundException } from "../users/exceptions/user.exceptions";
 import type { UserStoreModel } from "../users/model/user-store.model";
 import { UsersService } from "../users/users.service";
 import {
     InvalidOperationException,
     RoomNotFoundException,
     UnauthorizedHostActionException,
-    UserNotFoundException,
 } from "./exceptions/room.exceptions";
 import type { RoomStoreModel } from "./model/store/room-store.model";
 import { RoomsRepository } from "./rooms.repository";
@@ -324,7 +324,7 @@ describe("RoomsService", () => {
         test("should return new session for existing member", async () => {
             const user = createMockUser();
             roomsRepository.getMembers.mockResolvedValueOnce(["user-123"]);
-            usersService.findById.mockResolvedValueOnce(user);
+            usersService.getById.mockResolvedValueOnce(user);
             jwtAuthService.sign.mockReturnValue("rejoin-token");
 
             const result = await service.rejoin("ABCD12", "user-123");
@@ -343,7 +343,7 @@ describe("RoomsService", () => {
 
         test("should throw UserNotFoundException when user data not found", async () => {
             roomsRepository.getMembers.mockResolvedValueOnce(["user-123"]);
-            usersService.findById.mockResolvedValueOnce(null);
+            usersService.getById.mockRejectedValueOnce(new UserNotFoundException());
 
             await expect(service.rejoin("ABCD12", "user-123")).rejects.toThrow(
                 UserNotFoundException,
@@ -392,7 +392,7 @@ describe("RoomsService", () => {
             const room = createMockRoom({ hostId: "host-123" });
             const memberToKick = createMockUser({ id: "user-123", socketId: "socket-456" });
             roomsRepository.findByCode.mockResolvedValueOnce(room);
-            usersService.findById.mockResolvedValueOnce(memberToKick);
+            usersService.getById.mockResolvedValueOnce(memberToKick);
 
             const result = await service.kick("host-123", "ABCD12", "user-123");
 
@@ -422,7 +422,7 @@ describe("RoomsService", () => {
         test("should throw UserNotFoundException when member to kick not found", async () => {
             const room = createMockRoom({ hostId: "host-123" });
             roomsRepository.findByCode.mockResolvedValueOnce(room);
-            usersService.findById.mockResolvedValueOnce(null);
+            usersService.getById.mockRejectedValueOnce(new UserNotFoundException());
 
             await expect(service.kick("host-123", "ABCD12", "unknown-user")).rejects.toThrow(
                 UserNotFoundException,

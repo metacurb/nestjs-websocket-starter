@@ -2,8 +2,8 @@ import {
     InvalidOperationException,
     RoomNotFoundException,
     UnauthorizedHostActionException,
-    UserNotFoundException,
 } from "../../rooms/exceptions/room.exceptions";
+import { UserNotFoundException } from "../../users/exceptions/user.exceptions";
 import { RoomErrorCode } from "../../shared/errors/error-codes";
 import { mapDomainExceptionToRoomErrorEvent } from "./map-domain-exception-to-room-error-event";
 

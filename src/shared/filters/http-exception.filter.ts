@@ -10,8 +10,8 @@ import {
     InvalidOperationException,
     RoomNotFoundException,
     UnauthorizedHostActionException,
-    UserNotFoundException,
 } from "../../rooms/exceptions/room.exceptions";
+import { UserNotFoundException } from "../../users/exceptions/user.exceptions";
 
 const DOMAIN_EXCEPTIONS = [
     RoomNotFoundException,

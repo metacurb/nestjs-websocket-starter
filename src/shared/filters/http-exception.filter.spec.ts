@@ -4,8 +4,8 @@ import {
     InvalidOperationException,
     RoomNotFoundException,
     UnauthorizedHostActionException,
-    UserNotFoundException,
 } from "../../rooms/exceptions/room.exceptions";
+import { UserNotFoundException } from "../../users/exceptions/user.exceptions";
 import { RoomErrorCode } from "../errors/error-codes";
 import { HttpDomainExceptionFilter } from "./http-exception.filter";
 

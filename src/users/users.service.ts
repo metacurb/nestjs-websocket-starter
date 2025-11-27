@@ -3,7 +3,7 @@ import { PinoLogger } from "nestjs-pino";
 import { v4 as uuid } from "uuid";
 
 import { ConfigService } from "../config/config.service";
-import { UserNotFoundException } from "../rooms/exceptions/room.exceptions";
+import { UserNotFoundException } from "./exceptions/user.exceptions";
 import { UserStoreModel } from "./model/user-store.model";
 import { UsersRepository } from "./users.repository";
 
