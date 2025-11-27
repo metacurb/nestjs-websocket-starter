@@ -1,4 +1,4 @@
-import { UseFilters, UsePipes, ValidationPipe } from "@nestjs/common";
+import { UseFilters, UseInterceptors, UsePipes, ValidationPipe } from "@nestjs/common";
 import type { OnGatewayConnection, OnGatewayDisconnect } from "@nestjs/websockets";
 import {
     ConnectedSocket,
@@ -9,9 +9,12 @@ import {
 } from "@nestjs/websockets";
 import { PinoLogger } from "nestjs-pino";
 import { Server, Socket } from "socket.io";
+import { v4 as uuid } from "uuid";
 
 import { EventsAuthService } from "../auth/events-auth.service";
 import { WsDomainExceptionFilter } from "../filters/ws-exception.filter";
+import { correlationStorage } from "../logging/correlation.context";
+import { CorrelationIdInterceptor } from "../logging/interceptors/correlation-id.interceptor";
 import { KickUserInput } from "../rooms/model/input/kick-user.input";
 import { UpdateHostInput } from "../rooms/model/input/update-host.input";
 import { RoomsService } from "../rooms/rooms.service";
@@ -19,6 +22,7 @@ import { EventsMessages } from "./model/events.messages";
 import { type GatewayEvents } from "./model/room.event";
 
 @UseFilters(WsDomainExceptionFilter)
+@UseInterceptors(CorrelationIdInterceptor)
 @UsePipes(new ValidationPipe())
 @WebSocketGateway({
     cors: {
@@ -65,21 +69,23 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         @MessageBody()
         input: KickUserInput,
     ) {
-        const { kickedSocketId } = await this.roomsService.kick(
-            socket.data.userId,
-            socket.data.roomCode,
-            input.kickUserId,
-        );
+        const { roomCode, userId } = socket.data;
+
+        this.logger.info({ roomCode, userId, kickUserId: input.kickUserId }, "Kicking user");
+
+        const { kickedSocketId } = await this.roomsService.kick(userId, roomCode, input.kickUserId);
 
         if (kickedSocketId) {
             this.emitToUser(kickedSocketId, "user:kicked", null);
             this.disconnectUser(kickedSocketId);
         }
 
-        this.emitToRoom(socket.data.roomCode, "user:left", {
+        this.emitToRoom(roomCode, "user:left", {
             reason: "KICKED",
             userId: input.kickUserId,
         });
+
+        this.logger.info({ roomCode, kickedUserId: input.kickUserId }, "User kicked");
     }
 
     @SubscribeMessage(EventsMessages.TransferHost)
@@ -89,13 +95,15 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         @MessageBody()
         input: UpdateHostInput,
     ) {
-        const room = await this.roomsService.updateHost(
-            socket.data.userId,
-            socket.data.roomCode,
-            input.newHostId,
-        );
+        const { roomCode, userId } = socket.data;
+
+        this.logger.info({ roomCode, userId, newHostId: input.newHostId }, "Transferring host");
+
+        const room = await this.roomsService.updateHost(userId, roomCode, input.newHostId);
 
         this.emitToRoom(room.code, "room:host_updated", { hostId: room.hostId });
+
+        this.logger.info({ roomCode, newHostId: room.hostId }, "Host transferred");
     }
 
     @SubscribeMessage(EventsMessages.ToggleLock)
@@ -103,8 +111,15 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         @ConnectedSocket()
         socket: Socket,
     ) {
-        const room = await this.roomsService.toggleLock(socket.data.userId, socket.data.roomCode);
+        const { roomCode, userId } = socket.data;
+
+        this.logger.info({ roomCode, userId }, "Toggling room lock");
+
+        const room = await this.roomsService.toggleLock(userId, roomCode);
+
         this.emitToRoom(room.code, "room:lock_toggled", { isLocked: room.isLocked });
+
+        this.logger.info({ roomCode, isLocked: room.isLocked }, "Room lock toggled");
     }
 
     @SubscribeMessage(EventsMessages.LeaveRoom)
@@ -114,6 +129,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     ) {
         const { roomCode, userId } = socket.data;
 
+        this.logger.info({ roomCode, userId }, "User leaving room");
+
         await this.roomsService.leave(roomCode, userId);
 
         this.disconnectUser(socket.id);
@@ -122,70 +139,95 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
             reason: "LEFT",
             userId,
         });
+
+        this.logger.info({ roomCode, userId }, "User left room");
     }
 
     @SubscribeMessage(EventsMessages.CloseRoom)
-    async onCloseRoom(socket: Socket) {
-        const { roomCode } = socket.data;
-        await this.roomsService.close(socket.data.userId, roomCode);
+    async onCloseRoom(@ConnectedSocket() socket: Socket) {
+        const { roomCode, userId } = socket.data;
+
+        this.logger.info({ roomCode, userId }, "Closing room");
+
+        await this.roomsService.close(userId, roomCode);
+
         this.emitToRoom(roomCode, "room:closed", { reason: "HOST_CLOSED" });
 
         const sockets = await this.server.in(roomCode).fetchSockets();
 
-        for (const socket of sockets) {
-            socket.leave(roomCode);
-            socket.emit("room:closed", { reason: "HOST_CLOSED" });
-            socket.disconnect(true);
+        for (const s of sockets) {
+            s.leave(roomCode);
+            s.emit("room:closed", { reason: "HOST_CLOSED" });
+            s.disconnect(true);
         }
+
+        this.logger.info({ roomCode }, "Room closed");
     }
 
     async handleConnection(socket: Socket) {
-        try {
-            const token = socket.handshake.auth?.token;
-            const payload = this.eventsAuthService.verifyToken(token);
+        await correlationStorage.run({ correlationId: uuid() }, async () => {
+            try {
+                const token = socket.handshake.auth?.token;
+                const payload = this.eventsAuthService.verifyToken(token);
+                const { roomCode, userId } = payload;
 
-            const user = await this.roomsService.getRoomMember(payload.userId);
+                this.logger.debug({ userId, roomCode }, "Socket connecting");
 
-            if (!user) {
+                const user = await this.roomsService.getRoomMember(userId);
+
+                if (!user) {
+                    this.logger.warn({ userId }, "User not found, disconnecting");
+                    socket.disconnect(true);
+                    return;
+                }
+
+                socket.data.userId = userId;
+                socket.data.roomCode = roomCode;
+
+                const updatedUser = await this.roomsService.updateConnectedUser(userId, socket.id);
+
+                const [room, existingUsers] = await Promise.all([
+                    this.roomsService.getByCode(roomCode),
+                    this.roomsService.getRoomMembersWithDetails(roomCode),
+                ]);
+
+                socket.join(roomCode);
+
+                this.emitToUser(socket.id, "room:state", { room, users: existingUsers });
+                this.emitToRoom(roomCode, "user:connected", { user: updatedUser });
+
+                this.logger.info(
+                    { roomCode, userId, socketId: socket.id },
+                    "User connected to room",
+                );
+            } catch (error) {
+                this.logger.warn({ error }, "Connection failed");
                 socket.disconnect(true);
-                return;
             }
-
-            const { roomCode, userId } = payload;
-
-            socket.data.userId = userId;
-            socket.data.roomCode = roomCode;
-
-            const updatedUser = await this.roomsService.updateConnectedUser(userId, socket.id);
-
-            const [room, existingUsers] = await Promise.all([
-                this.roomsService.getByCode(roomCode),
-                this.roomsService.getRoomMembersWithDetails(roomCode),
-            ]);
-
-            socket.join(roomCode);
-
-            this.emitToUser(socket.id, "room:state", { room, users: existingUsers });
-            this.emitToRoom(roomCode, "user:connected", { user: updatedUser });
-        } catch (error) {
-            this.logger.warn({ error }, "Connection failed");
-            socket.disconnect(true);
-        }
+        });
     }
 
     async handleDisconnect(
         @ConnectedSocket()
         socket: Socket,
     ) {
-        if (!socket.data?.roomCode || !socket.data?.userId) {
-            return;
-        }
+        await correlationStorage.run({ correlationId: uuid() }, async () => {
+            if (!socket.data?.roomCode || !socket.data?.userId) {
+                return;
+            }
 
-        try {
-            const updatedUser = await this.roomsService.updateDisconnectedUser(socket.data.userId);
-            this.emitToRoom(socket.data.roomCode, "user:disconnected", { user: updatedUser });
-        } catch {
-            // User may have been deleted (e.g., room closed), ignore
-        }
+            const { roomCode, userId } = socket.data;
+
+            try {
+                this.logger.debug({ roomCode, userId }, "User disconnecting");
+
+                const updatedUser = await this.roomsService.updateDisconnectedUser(userId);
+                this.emitToRoom(roomCode, "user:disconnected", { user: updatedUser });
+
+                this.logger.info({ roomCode, userId }, "User disconnected from room");
+            } catch {
+                // User may have been deleted (e.g., room closed), ignore
+            }
+        });
     }
 }

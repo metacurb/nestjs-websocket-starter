@@ -16,17 +16,17 @@ $ yarn install
 
 Create a `.env` file with the following variables:
 
-| Variable                       | Description                                      |
-| ------------------------------ | ------------------------------------------------ |
-| `JWT_SECRET`                   | Secret key for signing JWTs                      |
-| `REDIS_HOST`                   | Redis server host                                |
-| `REDIS_PORT`                   | Redis server port                                |
-| `ROOM_CODE_ALPHABET`           | Characters used to generate room codes           |
-| `ROOM_CODE_LENGTH`             | Length of generated room codes                   |
-| `ROOM_MAX_USERS`               | Maximum allowed users per room                   |
-| `ROOM_TTL_SECONDS`             | TTL for rooms and JWT expiry (in seconds)        |
-| `USER_DISPLAY_NAME_MIN_LENGTH` | Minimum length for user display names            |
-| `USER_DISPLAY_NAME_MAX_LENGTH` | Maximum length for user display names            |
+| Variable                       | Description                               |
+| ------------------------------ | ----------------------------------------- |
+| `JWT_SECRET`                   | Secret key for signing JWTs               |
+| `REDIS_HOST`                   | Redis server host                         |
+| `REDIS_PORT`                   | Redis server port                         |
+| `ROOM_CODE_ALPHABET`           | Characters used to generate room codes    |
+| `ROOM_CODE_LENGTH`             | Length of generated room codes            |
+| `ROOM_MAX_USERS`               | Maximum allowed users per room            |
+| `ROOM_TTL_SECONDS`             | TTL for rooms and JWT expiry (in seconds) |
+| `USER_DISPLAY_NAME_MIN_LENGTH` | Minimum length for user display names     |
+| `USER_DISPLAY_NAME_MAX_LENGTH` | Maximum length for user display names     |
 
 ## Running the app
 
@@ -180,8 +180,8 @@ A single JWT handles all authentication.
 
 ```json
 {
-  "roomCode": "ABCD",
-  "userId": "uuid"
+    "roomCode": "ABCD",
+    "userId": "uuid"
 }
 ```
 
@@ -316,8 +316,8 @@ Errors:
 Connect to the `/rooms` namespace with the token in handshake auth:
 
 ```javascript
-const socket = io('/rooms', {
-  auth: { token: '<jwt>' }
+const socket = io("/rooms", {
+    auth: { token: "<jwt>" },
 });
 ```
 
@@ -335,16 +335,16 @@ const socket = io('/rooms', {
 
 ### Outgoing (server → client)
 
-| Event               | Payload                              | Description                 |
-| ------------------- | ------------------------------------ | --------------------------- |
-| `room:closed`       | `{ reason: "HOST_CLOSED" \| "HOST_LEFT" }` | Room closed           |
-| `room:host_updated` | `{ hostId }`                         | New host assigned           |
-| `room:lock_toggled` | `{ isLocked }`                       | Broadcast lock state        |
-| `user:connected`    | `{ user }`                           | Broadcast user connected    |
-| `user:disconnected` | `{ user }`                           | Broadcast user disconnected |
-| `user:kicked`       | none                                 | Sent to kicked user         |
-| `user:left`         | `{ reason: "KICKED" \| "LEFT", userId }` | Broadcast departure     |
-| `error:room`        | `{ code, message }`                  | Room-related error          |
+| Event               | Payload                                    | Description                 |
+| ------------------- | ------------------------------------------ | --------------------------- |
+| `room:closed`       | `{ reason: "HOST_CLOSED" \| "HOST_LEFT" }` | Room closed                 |
+| `room:host_updated` | `{ hostId }`                               | New host assigned           |
+| `room:lock_toggled` | `{ isLocked }`                             | Broadcast lock state        |
+| `user:connected`    | `{ user }`                                 | Broadcast user connected    |
+| `user:disconnected` | `{ user }`                                 | Broadcast user disconnected |
+| `user:kicked`       | none                                       | Sent to kicked user         |
+| `user:left`         | `{ reason: "KICKED" \| "LEFT", userId }`   | Broadcast departure         |
+| `error:room`        | `{ code, message }`                        | Room-related error          |
 
 ### Error Codes
 

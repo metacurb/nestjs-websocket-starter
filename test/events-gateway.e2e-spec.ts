@@ -346,7 +346,10 @@ describe("EventsGateway (e2e)", () => {
                 new Promise<string>((resolve) =>
                     socket.on("connect_error", () => resolve("connect_error")),
                 ),
-                new Promise<string>((resolve) => setTimeout(() => resolve("timeout"), 3000)),
+                new Promise<string>((resolve) => {
+                    const timer = setTimeout(() => resolve("timeout"), 3000);
+                    timer.unref();
+                }),
             ]);
 
             expect(["disconnected", "connect_error"]).toContain(result);

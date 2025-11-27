@@ -2,6 +2,7 @@ import { createMock } from "@golevelup/ts-jest";
 import type { TestingModule } from "@nestjs/testing";
 import { Test } from "@nestjs/testing";
 import type { Redis } from "ioredis";
+import { PinoLogger } from "nestjs-pino";
 
 import { REDIS_CLIENT } from "./constants";
 import { RedisService } from "./redis.service";
@@ -19,6 +20,10 @@ describe("RedisService", () => {
                 {
                     provide: REDIS_CLIENT,
                     useValue: redisClient,
+                },
+                {
+                    provide: PinoLogger,
+                    useValue: createMock<PinoLogger>(),
                 },
             ],
         }).compile();
