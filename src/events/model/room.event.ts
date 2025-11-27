@@ -1,6 +1,6 @@
 import type { RoomStoreModel } from "../../rooms/model/store/room-store.model";
-import type { UserStoreModel } from "../../rooms/model/store/user-store.model";
 import type { RoomErrorCode } from "../../shared/errors/error-codes";
+import type { UserStoreModel } from "../../users/model/user-store.model";
 
 export interface GatewayEvents {
     "error:room": RoomErrorEvent;

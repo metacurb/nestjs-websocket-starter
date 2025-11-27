@@ -7,7 +7,7 @@ import * as request from "supertest";
 import { AppModule } from "../src/app.module";
 import { RedisService } from "../src/redis/redis.service";
 import type { RoomStoreModel } from "../src/rooms/model/store/room-store.model";
-import type { UserStoreModel } from "../src/rooms/model/store/user-store.model";
+import type { UserStoreModel } from "../src/users/model/user-store.model";
 
 interface RoomSession {
     roomCode: string;

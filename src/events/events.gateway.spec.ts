@@ -8,8 +8,8 @@ import type { Server, Socket } from "socket.io";
 
 import { JwtAuthService } from "../auth/jwt-auth.service";
 import type { RoomStoreModel } from "../rooms/model/store/room-store.model";
-import type { UserStoreModel } from "../rooms/model/store/user-store.model";
 import { RoomsService } from "../rooms/rooms.service";
+import type { UserStoreModel } from "../users/model/user-store.model";
 import { EventsGateway } from "./events.gateway";
 
 describe("EventsGateway", () => {
@@ -20,7 +20,7 @@ describe("EventsGateway", () => {
     let mockServer: DeepMocked<Server>;
 
     const createMockUser = (overrides: Partial<UserStoreModel> = {}): UserStoreModel => ({
-        displayName: "Test UserStoreModel",
+        displayName: "Test User",
         id: "user-123",
         isConnected: true,
         roomCode: "ABCD12",

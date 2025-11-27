@@ -1,6 +1,5 @@
 import { Injectable } from "@nestjs/common";
 import { PinoLogger } from "nestjs-pino";
-import { v4 as uuid } from "uuid";
 
 import { JwtAuthService } from "../auth/jwt-auth.service";
 import {
@@ -12,19 +11,13 @@ import {
 import { ConfigService } from "../config/config.service";
 import { RedisService } from "../redis/redis.service";
 import { RoomErrorCode } from "../shared/errors/error-codes";
+import type { UserStoreModel } from "../users/model/user-store.model";
+import { UsersService } from "../users/users.service";
+import { REDIS_ROOM_KEY } from "./constants";
 import { RoomSessionDtoModel } from "./model/dto/room-session-dto.model";
 import type { CreateRoomInput } from "./model/input/create-room.input";
 import { RoomStoreModel } from "./model/store/room-store.model";
-import { UserStoreModel } from "./model/store/user-store.model";
 import { generateRoomCode } from "./util/generate-room-code";
-
-const createUser = (roomCode: string, displayName: string): UserStoreModel => ({
-    displayName,
-    id: uuid(),
-    isConnected: false,
-    roomCode,
-    socketId: null,
-});
 
 @Injectable()
 export class RoomsService {
@@ -33,37 +26,38 @@ export class RoomsService {
         private readonly jwtAuthService: JwtAuthService,
         private readonly logger: PinoLogger,
         private readonly redisService: RedisService,
+        private readonly usersService: UsersService,
     ) {
         this.logger.setContext(this.constructor.name);
     }
 
     async getByCode(roomCode: string): Promise<RoomStoreModel> {
         this.logger.info({ roomCode }, "Fetching room by code");
-        const room = await this.redisService.getJson<RoomStoreModel>(`room:${roomCode}`);
+        const room = await this.redisService.getJson<RoomStoreModel>(
+            `${REDIS_ROOM_KEY}:${roomCode}`,
+        );
         if (!room) throw new RoomNotFoundException();
         return room;
     }
 
     async addRoomMember(roomCode: string, userId: string): Promise<void> {
-        await this.redisService.sadd(`room:${roomCode}:users`, userId);
+        await this.redisService.sadd(`${REDIS_ROOM_KEY}:${roomCode}:users`, userId);
     }
 
     async removeRoomMember(roomCode: string, userId: string): Promise<void> {
-        await this.redisService.srem(`room:${roomCode}:users`, userId);
+        await this.redisService.srem(`${REDIS_ROOM_KEY}:${roomCode}:users`, userId);
     }
 
-    async getRoomMember(userId: string): Promise<UserStoreModel> {
-        const member = await this.redisService.getJson<UserStoreModel>(`user:${userId}`);
-        if (!member) throw new UserNotFoundException();
-        return member;
+    getRoomMember(userId: string): Promise<UserStoreModel> {
+        return this.usersService.getById(userId);
     }
 
     async getRoomMembers(roomCode: string): Promise<string[]> {
-        return await this.redisService.smembers<string>(`room:${roomCode}:users`);
+        return await this.redisService.smembers<string>(`${REDIS_ROOM_KEY}:${roomCode}:users`);
     }
 
     async isMember(roomCode: string, userId: string): Promise<boolean> {
-        return await this.redisService.sismember(`room:${roomCode}:users`, userId);
+        return await this.redisService.sismember(`${REDIS_ROOM_KEY}:${roomCode}:users`, userId);
     }
 
     async create({ displayName, maxUsers }: CreateRoomInput): Promise<RoomSessionDtoModel> {
@@ -72,7 +66,8 @@ export class RoomsService {
             this.configService.roomCodeLength,
         );
 
-        const user = createUser(roomCode, displayName);
+        const ttl = this.configService.roomTtlSeconds;
+        const user = await this.usersService.create(roomCode, displayName, ttl);
 
         const room: RoomStoreModel = {
             code: roomCode,
@@ -84,11 +79,9 @@ export class RoomsService {
             updatedAt: new Date(),
         };
 
-        const ttl = this.configService.roomTtlSeconds;
-        await this.redisService.setJson(`room:${room.code}`, room, ttl);
-        await this.redisService.setJson(`user:${user.id}`, user, ttl);
+        await this.redisService.setJson(`${REDIS_ROOM_KEY}:${room.code}`, room, ttl);
         await this.addRoomMember(room.code, user.id);
-        await this.redisService.expire(`room:${room.code}:users`, ttl);
+        await this.redisService.expire(`${REDIS_ROOM_KEY}:${room.code}:users`, ttl);
 
         this.logger.info({ roomCode: room.code, userId: user.id }, "Room created");
 
@@ -112,10 +105,8 @@ export class RoomsService {
             throw new InvalidOperationException("Room is full", RoomErrorCode.RoomFull);
         }
 
-        const user = createUser(room.code, displayName);
-
         const ttl = this.configService.roomTtlSeconds;
-        await this.redisService.setJson(`user:${user.id}`, user, ttl);
+        const user = await this.usersService.create(room.code, displayName, ttl);
         await this.addRoomMember(room.code, user.id);
 
         this.logger.info({ roomCode: room.code, userId: user.id }, "User joined room");
@@ -130,7 +121,7 @@ export class RoomsService {
         const members = await this.getRoomMembers(roomCode);
         if (!members.includes(userId)) throw new UserNotFoundException();
 
-        const user = await this.redisService.getJson<UserStoreModel>(`user:${userId}`);
+        const user = await this.usersService.findById(userId);
         if (!user) throw new UserNotFoundException();
 
         this.logger.info({ roomCode, userId }, "User rejoined room");
@@ -190,15 +181,13 @@ export class RoomsService {
             );
         }
 
-        const memberToKick = await this.redisService.getJson<UserStoreModel>(
-            `user:${memberToKickUserId}`,
-        );
+        const memberToKick = await this.usersService.findById(memberToKickUserId);
 
         if (!memberToKick) {
             throw new UserNotFoundException();
         }
 
-        await this.redisService.del(`user:${memberToKick}`);
+        await this.usersService.delete(memberToKickUserId);
         await this.removeRoomMember(roomCode, memberToKick.id);
 
         this.logger.info({ roomCode, kickedUserId: memberToKickUserId }, "User kicked from room");
@@ -224,36 +213,20 @@ export class RoomsService {
             multi.del(`user:${id}`);
         });
 
-        multi.del(`room:${roomCode}:users`);
-        multi.del(`room:${roomCode}`);
+        multi.del(`${REDIS_ROOM_KEY}:${roomCode}:users`);
+        multi.del(`${REDIS_ROOM_KEY}:${roomCode}`);
 
         await multi.exec();
 
         this.logger.info({ roomCode, memberCount: members.length }, "Room closed");
     }
 
-    async updateConnectedUser(userId: string, socketId: string): Promise<UserStoreModel> {
-        const user = await this.redisService.getJson<UserStoreModel>(`user:${userId}`);
-        if (!user) throw new UserNotFoundException();
-
-        const updatedUser = { ...user, isConnected: true, socketId };
-        await this.redisService.setJson(`user:${userId}`, updatedUser);
-
-        this.logger.info({ userId, socketId, roomCode: user.roomCode }, "User connected");
-
-        return updatedUser;
+    updateConnectedUser(userId: string, socketId: string): Promise<UserStoreModel> {
+        return this.usersService.updateConnection(userId, socketId);
     }
 
-    async updateDisconnectedUser(userId: string): Promise<UserStoreModel> {
-        const user = await this.redisService.getJson<UserStoreModel>(`user:${userId}`);
-        if (!user) throw new UserNotFoundException();
-
-        const updatedUser = { ...user, isConnected: false, socketId: null };
-        await this.redisService.setJson(`user:${userId}`, updatedUser);
-
-        this.logger.info({ userId, roomCode: user.roomCode }, "User disconnected");
-
-        return updatedUser;
+    updateDisconnectedUser(userId: string): Promise<UserStoreModel> {
+        return this.usersService.updateDisconnection(userId);
     }
 
     async updateHost(userId: string, roomCode: string, newHostId: string): Promise<RoomStoreModel> {
@@ -286,7 +259,7 @@ export class RoomsService {
 
         const updatedRoom = { ...room, hostId: newHostId };
 
-        await this.redisService.setJson(`room:${roomCode}`, updatedRoom);
+        await this.redisService.setJson(`${REDIS_ROOM_KEY}:${roomCode}`, updatedRoom);
 
         this.logger.info(
             { roomCode, previousHost: userId, newHost: newHostId },
@@ -306,7 +279,7 @@ export class RoomsService {
 
         const updatedRoom = { ...room, isLocked: !room.isLocked };
 
-        await this.redisService.setJson(`room:${roomCode}`, updatedRoom);
+        await this.redisService.setJson(`${REDIS_ROOM_KEY}:${roomCode}`, updatedRoom);
 
         this.logger.info({ roomCode, isLocked: updatedRoom.isLocked }, "Room lock toggled");
 
@@ -317,18 +290,16 @@ export class RoomsService {
         this.logger.info({ roomCode }, "Deleting room");
 
         const members = await this.getRoomMembers(roomCode);
-        await Promise.all(members.map((id) => this.redisService.del(`user:${id}`)));
-        await this.redisService.del(`room:${roomCode}:users`);
-        await this.redisService.del(`room:${roomCode}`);
+        await Promise.all(members.map((id) => this.usersService.delete(id)));
+        await this.redisService.del(`${REDIS_ROOM_KEY}:${roomCode}:users`);
+        await this.redisService.del(`${REDIS_ROOM_KEY}:${roomCode}`);
 
         this.logger.info({ roomCode, memberCount: members.length }, "Room deleted");
     }
 
     async getRoomMembersWithDetails(code: string): Promise<UserStoreModel[]> {
         const memberIds = await this.getRoomMembers(code);
-        const members = await Promise.all(
-            memberIds.map((id) => this.redisService.getJson<UserStoreModel>(`user:${id}`)),
-        );
+        const members = await Promise.all(memberIds.map((id) => this.usersService.findById(id)));
         return members.filter((m): m is UserStoreModel => m !== null);
     }
 }
