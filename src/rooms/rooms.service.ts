@@ -9,14 +9,13 @@ import {
     UserNotFoundException,
 } from "../common/exceptions/room.exceptions";
 import { ConfigService } from "../config/config.service";
-import { RedisService } from "../redis/redis.service";
 import { RoomErrorCode } from "../shared/errors/error-codes";
 import type { UserStoreModel } from "../users/model/user-store.model";
 import { UsersService } from "../users/users.service";
-import { REDIS_ROOM_KEY } from "./constants";
 import { RoomSessionDtoModel } from "./model/dto/room-session-dto.model";
 import type { CreateRoomInput } from "./model/input/create-room.input";
 import { RoomStoreModel } from "./model/store/room-store.model";
+import { RoomsRepository } from "./rooms.repository";
 import { generateRoomCode } from "./util/generate-room-code";
 
 @Injectable()
@@ -25,7 +24,7 @@ export class RoomsService {
         private readonly configService: ConfigService,
         private readonly jwtAuthService: JwtAuthService,
         private readonly logger: PinoLogger,
-        private readonly redisService: RedisService,
+        private readonly roomsRepository: RoomsRepository,
         private readonly usersService: UsersService,
     ) {
         this.logger.setContext(this.constructor.name);
@@ -33,31 +32,21 @@ export class RoomsService {
 
     async getByCode(roomCode: string): Promise<RoomStoreModel> {
         this.logger.info({ roomCode }, "Fetching room by code");
-        const room = await this.redisService.getJson<RoomStoreModel>(
-            `${REDIS_ROOM_KEY}:${roomCode}`,
-        );
+        const room = await this.roomsRepository.findByCode(roomCode);
         if (!room) throw new RoomNotFoundException();
         return room;
-    }
-
-    async addRoomMember(roomCode: string, userId: string): Promise<void> {
-        await this.redisService.sadd(`${REDIS_ROOM_KEY}:${roomCode}:users`, userId);
-    }
-
-    async removeRoomMember(roomCode: string, userId: string): Promise<void> {
-        await this.redisService.srem(`${REDIS_ROOM_KEY}:${roomCode}:users`, userId);
     }
 
     getRoomMember(userId: string): Promise<UserStoreModel> {
         return this.usersService.getById(userId);
     }
 
-    async getRoomMembers(roomCode: string): Promise<string[]> {
-        return await this.redisService.smembers<string>(`${REDIS_ROOM_KEY}:${roomCode}:users`);
+    getRoomMembers(roomCode: string): Promise<string[]> {
+        return this.roomsRepository.getMembers(roomCode);
     }
 
-    async isMember(roomCode: string, userId: string): Promise<boolean> {
-        return await this.redisService.sismember(`${REDIS_ROOM_KEY}:${roomCode}:users`, userId);
+    isMember(roomCode: string, userId: string): Promise<boolean> {
+        return this.roomsRepository.isMember(roomCode, userId);
     }
 
     async create({ displayName, maxUsers }: CreateRoomInput): Promise<RoomSessionDtoModel> {
@@ -79,9 +68,9 @@ export class RoomsService {
             updatedAt: new Date(),
         };
 
-        await this.redisService.setJson(`${REDIS_ROOM_KEY}:${room.code}`, room, ttl);
-        await this.addRoomMember(room.code, user.id);
-        await this.redisService.expire(`${REDIS_ROOM_KEY}:${room.code}:users`, ttl);
+        await this.roomsRepository.save(room, ttl);
+        await this.roomsRepository.addMember(room.code, user.id);
+        await this.roomsRepository.setMembersTtl(room.code, ttl);
 
         this.logger.info({ roomCode: room.code, userId: user.id }, "Room created");
 
@@ -107,7 +96,7 @@ export class RoomsService {
 
         const ttl = this.configService.roomTtlSeconds;
         const user = await this.usersService.create(room.code, displayName, ttl);
-        await this.addRoomMember(room.code, user.id);
+        await this.roomsRepository.addMember(room.code, user.id);
 
         this.logger.info({ roomCode: room.code, userId: user.id }, "User joined room");
 
@@ -138,7 +127,7 @@ export class RoomsService {
         const members = await this.getRoomMembers(roomCode);
         if (!members.includes(userId)) throw new UserNotFoundException();
 
-        await this.removeRoomMember(roomCode, userId);
+        await this.roomsRepository.removeMember(roomCode, userId);
 
         const room = await this.getByCode(roomCode);
 
@@ -188,7 +177,7 @@ export class RoomsService {
         }
 
         await this.usersService.delete(memberToKickUserId);
-        await this.removeRoomMember(roomCode, memberToKick.id);
+        await this.roomsRepository.removeMember(roomCode, memberToKick.id);
 
         this.logger.info({ roomCode, kickedUserId: memberToKickUserId }, "User kicked from room");
 
@@ -206,17 +195,8 @@ export class RoomsService {
         }
 
         const members = await this.getRoomMembers(roomCode);
-
-        const multi = this.redisService.multi();
-
-        members.forEach((id) => {
-            multi.del(`user:${id}`);
-        });
-
-        multi.del(`${REDIS_ROOM_KEY}:${roomCode}:users`);
-        multi.del(`${REDIS_ROOM_KEY}:${roomCode}`);
-
-        await multi.exec();
+        await Promise.all(members.map((id) => this.usersService.delete(id)));
+        await this.roomsRepository.delete(roomCode);
 
         this.logger.info({ roomCode, memberCount: members.length }, "Room closed");
     }
@@ -258,8 +238,7 @@ export class RoomsService {
         }
 
         const updatedRoom = { ...room, hostId: newHostId };
-
-        await this.redisService.setJson(`${REDIS_ROOM_KEY}:${roomCode}`, updatedRoom);
+        await this.roomsRepository.save(updatedRoom);
 
         this.logger.info(
             { roomCode, previousHost: userId, newHost: newHostId },
@@ -278,8 +257,7 @@ export class RoomsService {
         }
 
         const updatedRoom = { ...room, isLocked: !room.isLocked };
-
-        await this.redisService.setJson(`${REDIS_ROOM_KEY}:${roomCode}`, updatedRoom);
+        await this.roomsRepository.save(updatedRoom);
 
         this.logger.info({ roomCode, isLocked: updatedRoom.isLocked }, "Room lock toggled");
 
@@ -291,8 +269,7 @@ export class RoomsService {
 
         const members = await this.getRoomMembers(roomCode);
         await Promise.all(members.map((id) => this.usersService.delete(id)));
-        await this.redisService.del(`${REDIS_ROOM_KEY}:${roomCode}:users`);
-        await this.redisService.del(`${REDIS_ROOM_KEY}:${roomCode}`);
+        await this.roomsRepository.delete(roomCode);
 
         this.logger.info({ roomCode, memberCount: members.length }, "Room deleted");
     }

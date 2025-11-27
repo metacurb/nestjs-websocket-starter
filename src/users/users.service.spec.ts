@@ -5,13 +5,13 @@ import { PinoLogger } from "nestjs-pino";
 
 import { UserNotFoundException } from "../common/exceptions/room.exceptions";
 import { ConfigService } from "../config/config.service";
-import { RedisService } from "../redis/redis.service";
 import type { UserStoreModel } from "./model/user-store.model";
+import { UsersRepository } from "./users.repository";
 import { UsersService } from "./users.service";
 
 describe("UsersService", () => {
     let service: UsersService;
-    let redisService: jest.Mocked<RedisService>;
+    let usersRepository: jest.Mocked<UsersRepository>;
     let configService: jest.Mocked<ConfigService>;
 
     const createMockUser = (overrides: Partial<UserStoreModel> = {}): UserStoreModel => ({
@@ -32,8 +32,8 @@ describe("UsersService", () => {
                     useValue: createMock<PinoLogger>(),
                 },
                 {
-                    provide: RedisService,
-                    useValue: createMock<RedisService>(),
+                    provide: UsersRepository,
+                    useValue: createMock<UsersRepository>(),
                 },
                 {
                     provide: ConfigService,
@@ -43,7 +43,7 @@ describe("UsersService", () => {
         }).compile();
 
         service = module.get<UsersService>(UsersService);
-        redisService = module.get(RedisService);
+        usersRepository = module.get(UsersRepository);
         configService = module.get(ConfigService);
 
         Object.defineProperty(configService, "roomTtlSeconds", {
@@ -65,37 +65,29 @@ describe("UsersService", () => {
             expect(user.roomCode).toBe("ABCD12");
             expect(user.isConnected).toBe(false);
             expect(user.socketId).toBeNull();
-            expect(redisService.setJson).toHaveBeenCalledWith(
-                `user:${user.id}`,
-                user,
-                3600,
-            );
+            expect(usersRepository.save).toHaveBeenCalledWith(user, 3600);
         });
 
         test("should save user with custom TTL", async () => {
             const user = await service.create("ABCD12", "Test User", 7200);
 
-            expect(redisService.setJson).toHaveBeenCalledWith(
-                `user:${user.id}`,
-                user,
-                7200,
-            );
+            expect(usersRepository.save).toHaveBeenCalledWith(user, 7200);
         });
     });
 
     describe("getById", () => {
         test("should return user when found", async () => {
             const user = createMockUser();
-            redisService.getJson.mockResolvedValue(user);
+            usersRepository.findById.mockResolvedValue(user);
 
             const result = await service.getById("user-123");
 
             expect(result).toEqual(user);
-            expect(redisService.getJson).toHaveBeenCalledWith("user:user-123");
+            expect(usersRepository.findById).toHaveBeenCalledWith("user-123");
         });
 
         test("should throw UserNotFoundException when user not found", async () => {
-            redisService.getJson.mockResolvedValue(null);
+            usersRepository.findById.mockResolvedValue(null);
 
             await expect(service.getById("unknown")).rejects.toThrow(UserNotFoundException);
         });
@@ -104,7 +96,7 @@ describe("UsersService", () => {
     describe("findById", () => {
         test("should return user when found", async () => {
             const user = createMockUser();
-            redisService.getJson.mockResolvedValue(user);
+            usersRepository.findById.mockResolvedValue(user);
 
             const result = await service.findById("user-123");
 
@@ -112,7 +104,7 @@ describe("UsersService", () => {
         });
 
         test("should return null when user not found", async () => {
-            redisService.getJson.mockResolvedValue(null);
+            usersRepository.findById.mockResolvedValue(null);
 
             const result = await service.findById("unknown");
 
@@ -123,13 +115,13 @@ describe("UsersService", () => {
     describe("updateConnection", () => {
         test("should update user to connected state", async () => {
             const user = createMockUser({ isConnected: false, socketId: null });
-            redisService.getJson.mockResolvedValue(user);
+            usersRepository.findById.mockResolvedValue(user);
 
             const result = await service.updateConnection("user-123", "socket-456");
 
             expect(result.isConnected).toBe(true);
             expect(result.socketId).toBe("socket-456");
-            expect(redisService.setJson).toHaveBeenCalledWith("user:user-123", {
+            expect(usersRepository.save).toHaveBeenCalledWith({
                 ...user,
                 isConnected: true,
                 socketId: "socket-456",
@@ -137,7 +129,7 @@ describe("UsersService", () => {
         });
 
         test("should throw UserNotFoundException when user not found", async () => {
-            redisService.getJson.mockResolvedValue(null);
+            usersRepository.findById.mockResolvedValue(null);
 
             await expect(service.updateConnection("unknown", "socket")).rejects.toThrow(
                 UserNotFoundException,
@@ -148,13 +140,13 @@ describe("UsersService", () => {
     describe("updateDisconnection", () => {
         test("should update user to disconnected state", async () => {
             const user = createMockUser({ isConnected: true, socketId: "socket-456" });
-            redisService.getJson.mockResolvedValue(user);
+            usersRepository.findById.mockResolvedValue(user);
 
             const result = await service.updateDisconnection("user-123");
 
             expect(result.isConnected).toBe(false);
             expect(result.socketId).toBeNull();
-            expect(redisService.setJson).toHaveBeenCalledWith("user:user-123", {
+            expect(usersRepository.save).toHaveBeenCalledWith({
                 ...user,
                 isConnected: false,
                 socketId: null,
@@ -162,7 +154,7 @@ describe("UsersService", () => {
         });
 
         test("should throw UserNotFoundException when user not found", async () => {
-            redisService.getJson.mockResolvedValue(null);
+            usersRepository.findById.mockResolvedValue(null);
 
             await expect(service.updateDisconnection("unknown")).rejects.toThrow(
                 UserNotFoundException,
@@ -174,7 +166,7 @@ describe("UsersService", () => {
         test("should delete user", async () => {
             await service.delete("user-123");
 
-            expect(redisService.del).toHaveBeenCalledWith("user:user-123");
+            expect(usersRepository.delete).toHaveBeenCalledWith("user-123");
         });
     });
 });

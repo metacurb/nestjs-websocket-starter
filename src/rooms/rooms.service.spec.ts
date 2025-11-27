@@ -11,15 +11,15 @@ import {
     UserNotFoundException,
 } from "../common/exceptions/room.exceptions";
 import { ConfigService } from "../config/config.service";
-import { RedisService } from "../redis/redis.service";
 import type { UserStoreModel } from "../users/model/user-store.model";
 import { UsersService } from "../users/users.service";
 import type { RoomStoreModel } from "./model/store/room-store.model";
+import { RoomsRepository } from "./rooms.repository";
 import { RoomsService } from "./rooms.service";
 
 describe("RoomsService", () => {
     let service: RoomsService;
-    let redisService: jest.Mocked<RedisService>;
+    let roomsRepository: jest.Mocked<RoomsRepository>;
     let jwtAuthService: jest.Mocked<JwtAuthService>;
     let configService: jest.Mocked<ConfigService>;
     let usersService: jest.Mocked<UsersService>;
@@ -53,8 +53,8 @@ describe("RoomsService", () => {
                     useValue: createMock<PinoLogger>(),
                 },
                 {
-                    provide: RedisService,
-                    useValue: createMock<RedisService>(),
+                    provide: RoomsRepository,
+                    useValue: createMock<RoomsRepository>(),
                 },
                 {
                     provide: JwtAuthService,
@@ -72,7 +72,7 @@ describe("RoomsService", () => {
         }).compile();
 
         service = module.get<RoomsService>(RoomsService);
-        redisService = module.get(RedisService);
+        roomsRepository = module.get(RoomsRepository);
         jwtAuthService = module.get(JwtAuthService);
         configService = module.get(ConfigService);
         usersService = module.get(UsersService);
@@ -85,16 +85,16 @@ describe("RoomsService", () => {
     describe("getByCode", () => {
         test("should return room when found", async () => {
             const room = createMockRoom();
-            redisService.getJson.mockResolvedValue(room);
+            roomsRepository.findByCode.mockResolvedValue(room);
 
             const result = await service.getByCode("ABCD12");
 
             expect(result).toBe(room);
-            expect(redisService.getJson).toHaveBeenCalledWith("room:ABCD12");
+            expect(roomsRepository.findByCode).toHaveBeenCalledWith("ABCD12");
         });
 
         test("should throw RoomNotFoundException when room not found", async () => {
-            redisService.getJson.mockResolvedValue(null);
+            roomsRepository.findByCode.mockResolvedValue(null);
 
             await expect(service.getByCode("NOTFOUND")).rejects.toThrow(RoomNotFoundException);
         });
@@ -121,16 +121,16 @@ describe("RoomsService", () => {
     describe("getRoomMembers", () => {
         test("should return members array when found", async () => {
             const members = ["user-1", "user-2"];
-            redisService.smembers.mockResolvedValue(members);
+            roomsRepository.getMembers.mockResolvedValue(members);
 
             const result = await service.getRoomMembers("ABCD12");
 
             expect(result).toEqual(members);
-            expect(redisService.smembers).toHaveBeenCalledWith("room:ABCD12:users");
+            expect(roomsRepository.getMembers).toHaveBeenCalledWith("ABCD12");
         });
 
         test("should return empty array when no members found", async () => {
-            redisService.smembers.mockResolvedValue([]);
+            roomsRepository.getMembers.mockResolvedValue([]);
 
             const result = await service.getRoomMembers("ABCD12");
 
@@ -140,16 +140,16 @@ describe("RoomsService", () => {
 
     describe("isMember", () => {
         test("should return true when user is a member", async () => {
-            redisService.sismember.mockResolvedValue(true);
+            roomsRepository.isMember.mockResolvedValue(true);
 
             const result = await service.isMember("ABCD12", "user-1");
 
             expect(result).toBe(true);
-            expect(redisService.sismember).toHaveBeenCalledWith("room:ABCD12:users", "user-1");
+            expect(roomsRepository.isMember).toHaveBeenCalledWith("ABCD12", "user-1");
         });
 
         test("should return false when user is not a member", async () => {
-            redisService.sismember.mockResolvedValue(false);
+            roomsRepository.isMember.mockResolvedValue(false);
 
             const result = await service.isMember("ABCD12", "user-3");
 
@@ -161,20 +161,20 @@ describe("RoomsService", () => {
         test("should return array of user details for all members", async () => {
             const user1 = createMockUser({ id: "user-1", displayName: "User 1" });
             const user2 = createMockUser({ id: "user-2", displayName: "User 2" });
-            redisService.smembers.mockResolvedValue(["user-1", "user-2"]);
+            roomsRepository.getMembers.mockResolvedValue(["user-1", "user-2"]);
             usersService.findById.mockResolvedValueOnce(user1).mockResolvedValueOnce(user2);
 
             const result = await service.getRoomMembersWithDetails("ABCD12");
 
             expect(result).toEqual([user1, user2]);
-            expect(redisService.smembers).toHaveBeenCalledWith("room:ABCD12:users");
+            expect(roomsRepository.getMembers).toHaveBeenCalledWith("ABCD12");
             expect(usersService.findById).toHaveBeenCalledWith("user-1");
             expect(usersService.findById).toHaveBeenCalledWith("user-2");
         });
 
         test("should filter out null users", async () => {
             const user1 = createMockUser({ id: "user-1", displayName: "User 1" });
-            redisService.smembers.mockResolvedValue(["user-1", "user-2"]);
+            roomsRepository.getMembers.mockResolvedValue(["user-1", "user-2"]);
             usersService.findById.mockResolvedValueOnce(user1).mockResolvedValueOnce(null);
 
             const result = await service.getRoomMembersWithDetails("ABCD12");
@@ -183,7 +183,7 @@ describe("RoomsService", () => {
         });
 
         test("should return empty array when no members", async () => {
-            redisService.smembers.mockResolvedValue([]);
+            roomsRepository.getMembers.mockResolvedValue([]);
 
             const result = await service.getRoomMembersWithDetails("ABCD12");
 
@@ -221,9 +221,9 @@ describe("RoomsService", () => {
 
             expect(result.roomCode).toBeDefined();
             expect(result.token).toBe("test-token");
-            expect(redisService.setJson).toHaveBeenCalledTimes(1); // Only room now
+            expect(roomsRepository.save).toHaveBeenCalled();
             expect(usersService.create).toHaveBeenCalled();
-            expect(redisService.sadd).toHaveBeenCalled();
+            expect(roomsRepository.addMember).toHaveBeenCalled();
             expect(jwtAuthService.sign).toHaveBeenCalled();
         });
 
@@ -238,8 +238,7 @@ describe("RoomsService", () => {
             });
 
             // Room should have TTL
-            expect(redisService.setJson).toHaveBeenCalledWith(
-                `room:${result.roomCode}`,
+            expect(roomsRepository.save).toHaveBeenCalledWith(
                 expect.objectContaining({ code: result.roomCode }),
                 mockRoomTtl,
             );
@@ -251,9 +250,9 @@ describe("RoomsService", () => {
                 mockRoomTtl,
             );
 
-            // Members set should have expire called
-            expect(redisService.expire).toHaveBeenCalledWith(
-                `room:${result.roomCode}:users`,
+            // Members set should have TTL
+            expect(roomsRepository.setMembersTtl).toHaveBeenCalledWith(
+                result.roomCode,
                 mockRoomTtl,
             );
         });
@@ -272,8 +271,8 @@ describe("RoomsService", () => {
         test("should add new member to existing room", async () => {
             const room = createMockRoom();
             const mockUser = createMockUser({ displayName: "New User" });
-            redisService.getJson.mockResolvedValueOnce(room);
-            redisService.smembers.mockResolvedValueOnce(["host-123"]);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
+            roomsRepository.getMembers.mockResolvedValueOnce(["host-123"]);
             usersService.create.mockResolvedValue(mockUser);
             jwtAuthService.sign.mockReturnValue("new-user-token");
 
@@ -282,14 +281,14 @@ describe("RoomsService", () => {
             expect(result.roomCode).toBe("ABCD12");
             expect(result.token).toBe("new-user-token");
             expect(usersService.create).toHaveBeenCalledTimes(1);
-            expect(redisService.sadd).toHaveBeenCalled();
+            expect(roomsRepository.addMember).toHaveBeenCalled();
         });
 
         test("should set TTL on new user", async () => {
             const room = createMockRoom();
             const mockUser = createMockUser({ displayName: "New User" });
-            redisService.getJson.mockResolvedValueOnce(room);
-            redisService.smembers.mockResolvedValueOnce(["host-123"]);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
+            roomsRepository.getMembers.mockResolvedValueOnce(["host-123"]);
             usersService.create.mockResolvedValue(mockUser);
             jwtAuthService.sign.mockReturnValue("new-user-token");
 
@@ -300,22 +299,22 @@ describe("RoomsService", () => {
 
         test("should throw InvalidOperationException when room is locked", async () => {
             const room = createMockRoom({ isLocked: true });
-            redisService.getJson.mockResolvedValueOnce(room);
-            redisService.smembers.mockResolvedValueOnce([]);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
+            roomsRepository.getMembers.mockResolvedValueOnce([]);
 
             await expect(service.join("ABCD12", "User")).rejects.toThrow(InvalidOperationException);
         });
 
         test("should throw InvalidOperationException when room is full", async () => {
             const room = createMockRoom({ maxUsers: 2 });
-            redisService.getJson.mockResolvedValueOnce(room);
-            redisService.smembers.mockResolvedValueOnce(["user-1", "user-2"]);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
+            roomsRepository.getMembers.mockResolvedValueOnce(["user-1", "user-2"]);
 
             await expect(service.join("ABCD12", "User")).rejects.toThrow(InvalidOperationException);
         });
 
         test("should throw RoomNotFoundException when room does not exist", async () => {
-            redisService.getJson.mockResolvedValue(null);
+            roomsRepository.findByCode.mockResolvedValue(null);
 
             await expect(service.join("NOTFOUND", "User")).rejects.toThrow(RoomNotFoundException);
         });
@@ -324,7 +323,7 @@ describe("RoomsService", () => {
     describe("rejoin", () => {
         test("should return new session for existing member", async () => {
             const user = createMockUser();
-            redisService.smembers.mockResolvedValueOnce(["user-123"]);
+            roomsRepository.getMembers.mockResolvedValueOnce(["user-123"]);
             usersService.findById.mockResolvedValueOnce(user);
             jwtAuthService.sign.mockReturnValue("rejoin-token");
 
@@ -335,7 +334,7 @@ describe("RoomsService", () => {
         });
 
         test("should throw UserNotFoundException when user is not a member", async () => {
-            redisService.smembers.mockResolvedValueOnce(["other-user"]);
+            roomsRepository.getMembers.mockResolvedValueOnce(["other-user"]);
 
             await expect(service.rejoin("ABCD12", "user-123")).rejects.toThrow(
                 UserNotFoundException,
@@ -343,7 +342,7 @@ describe("RoomsService", () => {
         });
 
         test("should throw UserNotFoundException when user data not found", async () => {
-            redisService.smembers.mockResolvedValueOnce(["user-123"]);
+            roomsRepository.getMembers.mockResolvedValueOnce(["user-123"]);
             usersService.findById.mockResolvedValueOnce(null);
 
             await expect(service.rejoin("ABCD12", "user-123")).rejects.toThrow(
@@ -355,16 +354,16 @@ describe("RoomsService", () => {
     describe("leave", () => {
         test("should remove member from room", async () => {
             const room = createMockRoom({ hostId: "host-123" });
-            redisService.smembers.mockResolvedValueOnce(["host-123", "user-123"]);
-            redisService.getJson.mockResolvedValueOnce(room);
+            roomsRepository.getMembers.mockResolvedValueOnce(["host-123", "user-123"]);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
 
             await service.leave("ABCD12", "user-123");
 
-            expect(redisService.srem).toHaveBeenCalledWith("room:ABCD12:users", "user-123");
+            expect(roomsRepository.removeMember).toHaveBeenCalledWith("ABCD12", "user-123");
         });
 
         test("should throw UserNotFoundException when user not in room", async () => {
-            redisService.smembers.mockResolvedValueOnce(["other-user"]);
+            roomsRepository.getMembers.mockResolvedValueOnce(["other-user"]);
 
             await expect(service.leave("ABCD12", "user-123")).rejects.toThrow(
                 UserNotFoundException,
@@ -373,17 +372,16 @@ describe("RoomsService", () => {
 
         test("should transfer host when host leaves and other members exist", async () => {
             const room = createMockRoom({ hostId: "host-123" });
-            redisService.smembers.mockResolvedValueOnce(["host-123", "user-123"]);
-            redisService.getJson
+            roomsRepository.getMembers.mockResolvedValueOnce(["host-123", "user-123"]);
+            roomsRepository.findByCode
                 .mockResolvedValueOnce(room) // getByCode in leave
                 .mockResolvedValueOnce(room); // getByCode in updateHost
-            redisService.sismember.mockResolvedValueOnce(true);
+            roomsRepository.isMember.mockResolvedValueOnce(true);
 
             await service.leave("ABCD12", "host-123");
 
-            expect(redisService.srem).toHaveBeenCalledWith("room:ABCD12:users", "host-123");
-            expect(redisService.setJson).toHaveBeenCalledWith(
-                "room:ABCD12",
+            expect(roomsRepository.removeMember).toHaveBeenCalledWith("ABCD12", "host-123");
+            expect(roomsRepository.save).toHaveBeenCalledWith(
                 expect.objectContaining({ hostId: "user-123" }),
             );
         });
@@ -393,19 +391,19 @@ describe("RoomsService", () => {
         test("should remove kicked member from room", async () => {
             const room = createMockRoom({ hostId: "host-123" });
             const memberToKick = createMockUser({ id: "user-123", socketId: "socket-456" });
-            redisService.getJson.mockResolvedValueOnce(room);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
             usersService.findById.mockResolvedValueOnce(memberToKick);
 
             const result = await service.kick("host-123", "ABCD12", "user-123");
 
             expect(result.kickedSocketId).toBe("socket-456");
             expect(usersService.delete).toHaveBeenCalledWith("user-123");
-            expect(redisService.srem).toHaveBeenCalledWith("room:ABCD12:users", "user-123");
+            expect(roomsRepository.removeMember).toHaveBeenCalledWith("ABCD12", "user-123");
         });
 
         test("should throw UnauthorizedHostActionException when not host", async () => {
             const room = createMockRoom({ hostId: "host-123" });
-            redisService.getJson.mockResolvedValueOnce(room);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
 
             await expect(service.kick("user-123", "ABCD12", "other-user")).rejects.toThrow(
                 UnauthorizedHostActionException,
@@ -414,7 +412,7 @@ describe("RoomsService", () => {
 
         test("should throw InvalidOperationException when trying to kick self", async () => {
             const room = createMockRoom({ hostId: "host-123" });
-            redisService.getJson.mockResolvedValueOnce(room);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
 
             await expect(service.kick("host-123", "ABCD12", "host-123")).rejects.toThrow(
                 InvalidOperationException,
@@ -423,7 +421,7 @@ describe("RoomsService", () => {
 
         test("should throw UserNotFoundException when member to kick not found", async () => {
             const room = createMockRoom({ hostId: "host-123" });
-            redisService.getJson.mockResolvedValueOnce(room);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
             usersService.findById.mockResolvedValueOnce(null);
 
             await expect(service.kick("host-123", "ABCD12", "unknown-user")).rejects.toThrow(
@@ -475,13 +473,13 @@ describe("RoomsService", () => {
     describe("updateHost", () => {
         test("should transfer host to another member", async () => {
             const room = createMockRoom({ hostId: "host-123" });
-            redisService.getJson.mockResolvedValueOnce(room);
-            redisService.sismember.mockResolvedValueOnce(true);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
+            roomsRepository.isMember.mockResolvedValueOnce(true);
 
             const result = await service.updateHost("host-123", "ABCD12", "user-123");
 
             expect(result.hostId).toBe("user-123");
-            expect(redisService.setJson).toHaveBeenCalledWith("room:ABCD12", {
+            expect(roomsRepository.save).toHaveBeenCalledWith({
                 ...room,
                 hostId: "user-123",
             });
@@ -489,7 +487,7 @@ describe("RoomsService", () => {
 
         test("should throw UnauthorizedHostActionException when not host", async () => {
             const room = createMockRoom({ hostId: "host-123" });
-            redisService.getJson.mockResolvedValueOnce(room);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
 
             await expect(service.updateHost("user-123", "ABCD12", "other-user")).rejects.toThrow(
                 UnauthorizedHostActionException,
@@ -498,7 +496,7 @@ describe("RoomsService", () => {
 
         test("should throw InvalidOperationException when already host", async () => {
             const room = createMockRoom({ hostId: "host-123" });
-            redisService.getJson.mockResolvedValueOnce(room);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
 
             await expect(service.updateHost("host-123", "ABCD12", "host-123")).rejects.toThrow(
                 InvalidOperationException,
@@ -507,8 +505,8 @@ describe("RoomsService", () => {
 
         test("should throw UserNotFoundException when target not a member", async () => {
             const room = createMockRoom({ hostId: "host-123" });
-            redisService.getJson.mockResolvedValueOnce(room);
-            redisService.sismember.mockResolvedValueOnce(false);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
+            roomsRepository.isMember.mockResolvedValueOnce(false);
 
             await expect(service.updateHost("host-123", "ABCD12", "unknown-user")).rejects.toThrow(
                 UserNotFoundException,
@@ -519,12 +517,12 @@ describe("RoomsService", () => {
     describe("toggleLock", () => {
         test("should toggle room lock from false to true", async () => {
             const room = createMockRoom({ isLocked: false });
-            redisService.getJson.mockResolvedValue(room);
+            roomsRepository.findByCode.mockResolvedValue(room);
 
             const result = await service.toggleLock("host-123", "ABCD12");
 
             expect(result.isLocked).toBe(true);
-            expect(redisService.setJson).toHaveBeenCalledWith("room:ABCD12", {
+            expect(roomsRepository.save).toHaveBeenCalledWith({
                 ...room,
                 isLocked: true,
             });
@@ -532,7 +530,7 @@ describe("RoomsService", () => {
 
         test("should toggle room lock from true to false", async () => {
             const room = createMockRoom({ isLocked: true });
-            redisService.getJson.mockResolvedValue(room);
+            roomsRepository.findByCode.mockResolvedValue(room);
 
             const result = await service.toggleLock("host-123", "ABCD12");
 
@@ -541,7 +539,7 @@ describe("RoomsService", () => {
 
         test("should throw UnauthorizedHostActionException when not host", async () => {
             const room = createMockRoom({ hostId: "host-123" });
-            redisService.getJson.mockResolvedValue(room);
+            roomsRepository.findByCode.mockResolvedValue(room);
 
             await expect(service.toggleLock("user-123", "ABCD12")).rejects.toThrow(
                 UnauthorizedHostActionException,
@@ -549,7 +547,7 @@ describe("RoomsService", () => {
         });
 
         test("should throw RoomNotFoundException when room not found", async () => {
-            redisService.getJson.mockResolvedValue(null);
+            roomsRepository.findByCode.mockResolvedValue(null);
 
             await expect(service.toggleLock("host-123", "NOTFOUND")).rejects.toThrow(
                 RoomNotFoundException,
@@ -558,29 +556,22 @@ describe("RoomsService", () => {
     });
 
     describe("close", () => {
-        test("should close room and delete all data via transaction", async () => {
+        test("should close room and delete all users and room", async () => {
             const room = createMockRoom({ hostId: "host-123" });
-            const mockMulti = {
-                del: jest.fn().mockReturnThis(),
-                exec: jest.fn().mockResolvedValue([]),
-            };
-            redisService.getJson.mockResolvedValueOnce(room);
-            redisService.smembers.mockResolvedValueOnce(["host-123", "user-1", "user-2"]);
-            redisService.multi.mockReturnValue(mockMulti as never);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
+            roomsRepository.getMembers.mockResolvedValueOnce(["host-123", "user-1", "user-2"]);
 
             await service.close("host-123", "ABCD12");
 
-            expect(mockMulti.del).toHaveBeenCalledWith("user:host-123");
-            expect(mockMulti.del).toHaveBeenCalledWith("user:user-1");
-            expect(mockMulti.del).toHaveBeenCalledWith("user:user-2");
-            expect(mockMulti.del).toHaveBeenCalledWith("room:ABCD12:users");
-            expect(mockMulti.del).toHaveBeenCalledWith("room:ABCD12");
-            expect(mockMulti.exec).toHaveBeenCalled();
+            expect(usersService.delete).toHaveBeenCalledWith("host-123");
+            expect(usersService.delete).toHaveBeenCalledWith("user-1");
+            expect(usersService.delete).toHaveBeenCalledWith("user-2");
+            expect(roomsRepository.delete).toHaveBeenCalledWith("ABCD12");
         });
 
         test("should throw UnauthorizedHostActionException when not host", async () => {
             const room = createMockRoom({ hostId: "host-123" });
-            redisService.getJson.mockResolvedValueOnce(room);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
 
             await expect(service.close("user-123", "ABCD12")).rejects.toThrow(
                 UnauthorizedHostActionException,
@@ -588,7 +579,7 @@ describe("RoomsService", () => {
         });
 
         test("should throw RoomNotFoundException when room not found", async () => {
-            redisService.getJson.mockResolvedValueOnce(null);
+            roomsRepository.findByCode.mockResolvedValueOnce(null);
 
             await expect(service.close("host-123", "NOTFOUND")).rejects.toThrow(
                 RoomNotFoundException,
@@ -598,23 +589,21 @@ describe("RoomsService", () => {
 
     describe("deleteRoom", () => {
         test("should delete room and all member data", async () => {
-            redisService.smembers.mockResolvedValue(["user-1", "user-2"]);
+            roomsRepository.getMembers.mockResolvedValue(["user-1", "user-2"]);
 
             await service.deleteRoom("ABCD12");
 
             expect(usersService.delete).toHaveBeenCalledWith("user-1");
             expect(usersService.delete).toHaveBeenCalledWith("user-2");
-            expect(redisService.del).toHaveBeenCalledWith("room:ABCD12:users");
-            expect(redisService.del).toHaveBeenCalledWith("room:ABCD12");
+            expect(roomsRepository.delete).toHaveBeenCalledWith("ABCD12");
         });
 
         test("should handle room with no members", async () => {
-            redisService.smembers.mockResolvedValue([]);
+            roomsRepository.getMembers.mockResolvedValue([]);
 
             await service.deleteRoom("ABCD12");
 
-            expect(redisService.del).toHaveBeenCalledWith("room:ABCD12:users");
-            expect(redisService.del).toHaveBeenCalledWith("room:ABCD12");
+            expect(roomsRepository.delete).toHaveBeenCalledWith("ABCD12");
         });
     });
 });
