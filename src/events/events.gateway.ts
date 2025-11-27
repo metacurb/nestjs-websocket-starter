@@ -12,7 +12,7 @@ import { Server, Socket } from "socket.io";
 import { v4 as uuid } from "uuid";
 
 import { JwtAuthService } from "../auth/jwt-auth.service";
-import { WsDomainExceptionFilter } from "../filters/ws-exception.filter";
+import { WsDomainExceptionFilter } from "../shared/filters/ws-exception.filter";
 import { correlationStorage } from "../logging/correlation.context";
 import { CorrelationIdInterceptor } from "../logging/interceptors/correlation-id.interceptor";
 import { KickUserInput } from "../rooms/model/input/kick-user.input";

@@ -6,8 +6,8 @@ import {
     RoomNotFoundException,
     UnauthorizedHostActionException,
     UserNotFoundException,
-} from "../common/exceptions/room.exceptions";
-import { mapDomainExceptionToRoomErrorEvent } from "../events/mapping/map-domain-exception-to-room-error-event";
+} from "../../common/exceptions/room.exceptions";
+import { mapDomainExceptionToRoomErrorEvent } from "../../events/mapping/map-domain-exception-to-room-error-event";
 
 const DOMAIN_EXCEPTIONS = [
     InvalidOperationException,
@@ -26,3 +26,4 @@ export class WsDomainExceptionFilter implements ExceptionFilter {
         client.emit("room:error", errorEvent);
     }
 }
+

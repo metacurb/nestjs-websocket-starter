@@ -11,7 +11,7 @@ import {
     RoomNotFoundException,
     UnauthorizedHostActionException,
     UserNotFoundException,
-} from "../common/exceptions/room.exceptions";
+} from "../../common/exceptions/room.exceptions";
 
 const DOMAIN_EXCEPTIONS = [
     RoomNotFoundException,
@@ -42,3 +42,4 @@ export class HttpDomainExceptionFilter implements ExceptionFilter {
         return new BadRequestException(exception.message);
     }
 }
+

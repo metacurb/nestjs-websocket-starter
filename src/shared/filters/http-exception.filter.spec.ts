@@ -5,8 +5,8 @@ import {
     RoomNotFoundException,
     UnauthorizedHostActionException,
     UserNotFoundException,
-} from "../common/exceptions/room.exceptions";
-import { RoomErrorCode } from "../shared/errors/error-codes";
+} from "../../common/exceptions/room.exceptions";
+import { RoomErrorCode } from "../errors/error-codes";
 import { HttpDomainExceptionFilter } from "./http-exception.filter";
 
 describe("HttpDomainExceptionFilter", () => {
@@ -72,3 +72,4 @@ describe("HttpDomainExceptionFilter", () => {
         expect(() => filter.catch(exception)).toThrow(expectedMessage);
     });
 });
+

@@ -6,12 +6,12 @@ import {
     RoomNotFoundException,
     UnauthorizedHostActionException,
     UserNotFoundException,
-} from "../common/exceptions/room.exceptions";
-import { mapDomainExceptionToRoomErrorEvent } from "../events/mapping/map-domain-exception-to-room-error-event";
-import { RoomErrorCode } from "../shared/errors/error-codes";
+} from "../../common/exceptions/room.exceptions";
+import { mapDomainExceptionToRoomErrorEvent } from "../../events/mapping/map-domain-exception-to-room-error-event";
+import { RoomErrorCode } from "../errors/error-codes";
 import { WsDomainExceptionFilter } from "./ws-exception.filter";
 
-jest.mock("../events/mapping/map-domain-exception-to-room-error-event");
+jest.mock("../../events/mapping/map-domain-exception-to-room-error-event");
 
 const mockMapDomainException = mapDomainExceptionToRoomErrorEvent as jest.MockedFunction<
     typeof mapDomainExceptionToRoomErrorEvent
@@ -91,3 +91,4 @@ describe("WsDomainExceptionFilter", () => {
         expect(mockSocket.emit).toHaveBeenCalledWith("room:error", mappedError);
     });
 });
+
