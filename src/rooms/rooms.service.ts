@@ -10,8 +10,8 @@ import {
     UserNotFoundException,
 } from "../common/exceptions/room.exceptions";
 import { ConfigService } from "../config/config.service";
-import { RoomErrorCode } from "../events/model/room.event";
 import { RedisService } from "../redis/redis.service";
+import { RoomErrorCode } from "../shared/errors/error-codes";
 import { RoomSessionDtoModel } from "./model/dto/room-session-dto.model";
 import type { CreateRoomInput } from "./model/input/create-room.input";
 import { RoomStoreModel } from "./model/store/room-store.model";

@@ -4,7 +4,7 @@ import {
     UnauthorizedHostActionException,
     UserNotFoundException,
 } from "../../common/exceptions/room.exceptions";
-import { RoomErrorCode } from "../model/room.event";
+import { RoomErrorCode } from "../../shared/errors/error-codes";
 import { mapDomainExceptionToRoomErrorEvent } from "./map-domain-exception-to-room-error-event";
 
 describe("mapDomainExceptionToRoomErrorEvent", () => {

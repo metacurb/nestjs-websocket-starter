@@ -8,7 +8,7 @@ import {
     UserNotFoundException,
 } from "../common/exceptions/room.exceptions";
 import { mapDomainExceptionToRoomErrorEvent } from "../events/mapping/map-domain-exception-to-room-error-event";
-import { RoomErrorCode } from "../events/model/room.event";
+import { RoomErrorCode } from "../shared/errors/error-codes";
 import { WsDomainExceptionFilter } from "./ws-exception.filter";
 
 jest.mock("../events/mapping/map-domain-exception-to-room-error-event");

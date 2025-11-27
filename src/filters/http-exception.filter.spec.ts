@@ -6,7 +6,7 @@ import {
     UnauthorizedHostActionException,
     UserNotFoundException,
 } from "../common/exceptions/room.exceptions";
-import { RoomErrorCode } from "../events/model/room.event";
+import { RoomErrorCode } from "../shared/errors/error-codes";
 import { HttpDomainExceptionFilter } from "./http-exception.filter";
 
 describe("HttpDomainExceptionFilter", () => {

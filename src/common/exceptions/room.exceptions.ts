@@ -1,4 +1,4 @@
-import { RoomErrorCode } from "../../events/model/room.event";
+import { RoomErrorCode } from "../../shared/errors/error-codes";
 
 export class RoomNotFoundException extends Error {
     readonly errorCode = RoomErrorCode.RoomNotFound;
