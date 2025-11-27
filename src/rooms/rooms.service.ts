@@ -2,16 +2,16 @@ import { Injectable } from "@nestjs/common";
 import { PinoLogger } from "nestjs-pino";
 
 import { JwtAuthService } from "../auth/jwt-auth.service";
+import { ConfigService } from "../config/config.service";
+import { RoomErrorCode } from "../shared/errors/error-codes";
+import type { UserStoreModel } from "../users/model/user-store.model";
+import { UsersService } from "../users/users.service";
 import {
     InvalidOperationException,
     RoomNotFoundException,
     UnauthorizedHostActionException,
     UserNotFoundException,
-} from "../common/exceptions/room.exceptions";
-import { ConfigService } from "../config/config.service";
-import { RoomErrorCode } from "../shared/errors/error-codes";
-import type { UserStoreModel } from "../users/model/user-store.model";
-import { UsersService } from "../users/users.service";
+} from "./exceptions/room.exceptions";
 import { RoomSessionDtoModel } from "./model/dto/room-session-dto.model";
 import type { CreateRoomInput } from "./model/input/create-room.input";
 import { RoomStoreModel } from "./model/store/room-store.model";

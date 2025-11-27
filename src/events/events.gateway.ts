@@ -12,12 +12,12 @@ import { Server, Socket } from "socket.io";
 import { v4 as uuid } from "uuid";
 
 import { JwtAuthService } from "../auth/jwt-auth.service";
-import { WsDomainExceptionFilter } from "../shared/filters/ws-exception.filter";
 import { correlationStorage } from "../logging/correlation.context";
 import { CorrelationIdInterceptor } from "../logging/interceptors/correlation-id.interceptor";
 import { KickUserInput } from "../rooms/model/input/kick-user.input";
 import { UpdateHostInput } from "../rooms/model/input/update-host.input";
 import { RoomsService } from "../rooms/rooms.service";
+import { WsDomainExceptionFilter } from "../shared/filters/ws-exception.filter";
 import { EventsMessages } from "./model/events.messages";
 import { type GatewayEvents } from "./model/room.event";
 

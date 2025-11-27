@@ -2,8 +2,8 @@ import { Injectable } from "@nestjs/common";
 import { PinoLogger } from "nestjs-pino";
 import { v4 as uuid } from "uuid";
 
-import { UserNotFoundException } from "../common/exceptions/room.exceptions";
 import { ConfigService } from "../config/config.service";
+import { UserNotFoundException } from "../rooms/exceptions/room.exceptions";
 import { UserStoreModel } from "./model/user-store.model";
 import { UsersRepository } from "./users.repository";
 

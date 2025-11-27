@@ -4,15 +4,15 @@ import { Test } from "@nestjs/testing";
 import { PinoLogger } from "nestjs-pino";
 
 import { JwtAuthService } from "../auth/jwt-auth.service";
+import { ConfigService } from "../config/config.service";
+import type { UserStoreModel } from "../users/model/user-store.model";
+import { UsersService } from "../users/users.service";
 import {
     InvalidOperationException,
     RoomNotFoundException,
     UnauthorizedHostActionException,
     UserNotFoundException,
-} from "../common/exceptions/room.exceptions";
-import { ConfigService } from "../config/config.service";
-import type { UserStoreModel } from "../users/model/user-store.model";
-import { UsersService } from "../users/users.service";
+} from "./exceptions/room.exceptions";
 import type { RoomStoreModel } from "./model/store/room-store.model";
 import { RoomsRepository } from "./rooms.repository";
 import { RoomsService } from "./rooms.service";

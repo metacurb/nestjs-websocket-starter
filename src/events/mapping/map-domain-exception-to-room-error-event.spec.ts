@@ -3,7 +3,7 @@ import {
     RoomNotFoundException,
     UnauthorizedHostActionException,
     UserNotFoundException,
-} from "../../common/exceptions/room.exceptions";
+} from "../../rooms/exceptions/room.exceptions";
 import { RoomErrorCode } from "../../shared/errors/error-codes";
 import { mapDomainExceptionToRoomErrorEvent } from "./map-domain-exception-to-room-error-event";
 

@@ -33,3 +33,4 @@ export class InvalidOperationException extends Error {
         this.name = "InvalidOperationException";
     }
 }
+

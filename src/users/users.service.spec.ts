@@ -3,7 +3,7 @@ import type { TestingModule } from "@nestjs/testing";
 import { Test } from "@nestjs/testing";
 import { PinoLogger } from "nestjs-pino";
 
-import { UserNotFoundException } from "../common/exceptions/room.exceptions";
+import { UserNotFoundException } from "../rooms/exceptions/room.exceptions";
 import { ConfigService } from "../config/config.service";
 import type { UserStoreModel } from "./model/user-store.model";
 import { UsersRepository } from "./users.repository";

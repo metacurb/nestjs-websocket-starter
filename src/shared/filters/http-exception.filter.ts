@@ -11,7 +11,7 @@ import {
     RoomNotFoundException,
     UnauthorizedHostActionException,
     UserNotFoundException,
-} from "../../common/exceptions/room.exceptions";
+} from "../../rooms/exceptions/room.exceptions";
 
 const DOMAIN_EXCEPTIONS = [
     RoomNotFoundException,

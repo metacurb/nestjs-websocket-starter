@@ -17,8 +17,8 @@ import { PinoLogger } from "nestjs-pino";
 import { from, Observable, tap } from "rxjs";
 
 import { JwtAuthGuard } from "../auth/jwt-auth.guard";
-import { HttpDomainExceptionFilter } from "../shared/filters/http-exception.filter";
 import { CorrelationIdInterceptor } from "../logging/interceptors/correlation-id.interceptor";
+import { HttpDomainExceptionFilter } from "../shared/filters/http-exception.filter";
 import type { RoomSessionDtoModel } from "./model/dto/room-session-dto.model";
 import { CreateRoomInput } from "./model/input/create-room.input";
 import { JoinRoomInput } from "./model/input/join-room.input";
