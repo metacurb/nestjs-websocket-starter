@@ -5,7 +5,7 @@ import { PinoLogger } from "nestjs-pino";
 import { JwtPayload } from "./model/jwt-payload";
 
 @Injectable()
-export class EventsAuthService {
+export class JwtAuthService {
     constructor(
         private readonly jwtService: JwtService,
         private readonly logger: PinoLogger,
@@ -13,7 +13,7 @@ export class EventsAuthService {
         this.logger.setContext(this.constructor.name);
     }
 
-    verifyToken(rawToken?: string): JwtPayload {
+    verify(rawToken?: string): JwtPayload {
         if (!rawToken) {
             this.logger.warn("Token verification failed: missing token");
             throw new UnauthorizedException("Missing authentication token");
@@ -21,7 +21,7 @@ export class EventsAuthService {
 
         try {
             const payload = this.jwtService.verify<JwtPayload>(rawToken);
-            this.logger.info(
+            this.logger.debug(
                 { userId: payload.userId, roomCode: payload.roomCode },
                 "Token verified",
             );
@@ -30,5 +30,13 @@ export class EventsAuthService {
             this.logger.warn({ err }, "Token verification failed: invalid or expired");
             throw new UnauthorizedException("Invalid or expired token");
         }
+    }
+
+    extractBearerToken(authorizationHeader?: string): string {
+        if (!authorizationHeader?.startsWith("Bearer ")) {
+            throw new UnauthorizedException("Missing or invalid Authorization header");
+        }
+
+        return authorizationHeader.replace("Bearer ", "").trim();
     }
 }

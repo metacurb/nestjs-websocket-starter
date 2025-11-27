@@ -6,7 +6,7 @@ import { Test } from "@nestjs/testing";
 import { PinoLogger } from "nestjs-pino";
 import type { Server, Socket } from "socket.io";
 
-import { EventsAuthService } from "../auth/events-auth.service";
+import { JwtAuthService } from "../auth/jwt-auth.service";
 import type { RoomStoreModel } from "../rooms/model/store/room-store.model";
 import type { UserStoreModel } from "../rooms/model/store/user-store.model";
 import { RoomsService } from "../rooms/rooms.service";
@@ -15,7 +15,7 @@ import { EventsGateway } from "./events.gateway";
 describe("EventsGateway", () => {
     let gateway: EventsGateway;
     let roomsService: DeepMocked<RoomsService>;
-    let eventsAuthService: DeepMocked<EventsAuthService>;
+    let jwtAuthService: DeepMocked<JwtAuthService>;
     let mockSocket: DeepMocked<Socket>;
     let mockServer: DeepMocked<Server>;
 
@@ -59,15 +59,15 @@ describe("EventsGateway", () => {
                     useValue: createMock<RoomsService>(),
                 },
                 {
-                    provide: EventsAuthService,
-                    useValue: createMock<EventsAuthService>(),
+                    provide: JwtAuthService,
+                    useValue: createMock<JwtAuthService>(),
                 },
             ],
         }).compile();
 
         gateway = module.get<EventsGateway>(EventsGateway);
         roomsService = module.get(RoomsService);
-        eventsAuthService = module.get(EventsAuthService);
+        jwtAuthService = module.get(JwtAuthService);
 
         gateway.server = mockServer;
 
@@ -176,7 +176,7 @@ describe("EventsGateway", () => {
             const room = createMockRoom();
             const existingUsers = [createMockUser({ id: "other-user", displayName: "Other User" })];
 
-            eventsAuthService.verifyToken.mockReturnValue(payload);
+            jwtAuthService.verify.mockReturnValue(payload);
             roomsService.getRoomMember.mockResolvedValue(user);
             roomsService.updateConnectedUser.mockResolvedValue(updatedUser);
             roomsService.getByCode.mockResolvedValue(room);
@@ -184,7 +184,7 @@ describe("EventsGateway", () => {
 
             await gateway.handleConnection(mockSocket);
 
-            expect(eventsAuthService.verifyToken).toHaveBeenCalledWith("valid-token");
+            expect(jwtAuthService.verify).toHaveBeenCalledWith("valid-token");
             expect(roomsService.getRoomMember).toHaveBeenCalledWith("user-123");
             expect(mockSocket.data.userId).toBe("user-123");
             expect(mockSocket.data.roomCode).toBe("ABCD12");
@@ -204,7 +204,7 @@ describe("EventsGateway", () => {
         test("should disconnect socket when user not found", async () => {
             const payload = { userId: "user-123", roomCode: "ABCD12" };
 
-            eventsAuthService.verifyToken.mockReturnValue(payload);
+            jwtAuthService.verify.mockReturnValue(payload);
             roomsService.getRoomMember.mockResolvedValue(null as unknown as UserStoreModel);
 
             await gateway.handleConnection(mockSocket);
@@ -214,7 +214,7 @@ describe("EventsGateway", () => {
         });
 
         test("should disconnect socket when token verification fails", async () => {
-            eventsAuthService.verifyToken.mockImplementation(() => {
+            jwtAuthService.verify.mockImplementation(() => {
                 throw new UnauthorizedException("Invalid token");
             });
 

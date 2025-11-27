@@ -2,7 +2,6 @@ import type { DeepMocked } from "@golevelup/ts-jest";
 import { createMock } from "@golevelup/ts-jest";
 import type { ExecutionContext } from "@nestjs/common";
 import { UnauthorizedException } from "@nestjs/common";
-import { JwtService } from "@nestjs/jwt";
 import type { TestingModule } from "@nestjs/testing";
 import { Test } from "@nestjs/testing";
 import type { Request } from "express";
@@ -10,11 +9,12 @@ import type { Request } from "express";
 import type { RoomStoreModel } from "../rooms/model/store/room-store.model";
 import { RoomsService } from "../rooms/rooms.service";
 import { JwtAuthGuard } from "./jwt-auth.guard";
+import { JwtAuthService } from "./jwt-auth.service";
 import type { JwtPayload } from "./model/jwt-payload";
 
 describe("JwtAuthGuard", () => {
     let guard: JwtAuthGuard;
-    let jwtService: DeepMocked<JwtService>;
+    let jwtAuthService: DeepMocked<JwtAuthService>;
     let roomsService: DeepMocked<RoomsService>;
 
     const createMockRequest = (authorization?: string): DeepMocked<Request> =>
@@ -52,8 +52,8 @@ describe("JwtAuthGuard", () => {
             providers: [
                 JwtAuthGuard,
                 {
-                    provide: JwtService,
-                    useValue: createMock<JwtService>(),
+                    provide: JwtAuthService,
+                    useValue: createMock<JwtAuthService>(),
                 },
                 {
                     provide: RoomsService,
@@ -63,7 +63,7 @@ describe("JwtAuthGuard", () => {
         }).compile();
 
         guard = module.get<JwtAuthGuard>(JwtAuthGuard);
-        jwtService = module.get(JwtService);
+        jwtAuthService = module.get(JwtAuthService);
         roomsService = module.get(RoomsService);
     });
 
@@ -75,6 +75,9 @@ describe("JwtAuthGuard", () => {
         test("should throw UnauthorizedException when Authorization header is missing", async () => {
             const request = createMockRequest(undefined);
             const context = createMockExecutionContext(request);
+            jwtAuthService.extractBearerToken.mockImplementation(() => {
+                throw new UnauthorizedException("Missing or invalid Authorization header");
+            });
 
             await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
             await expect(guard.canActivate(context)).rejects.toThrow(
@@ -85,6 +88,9 @@ describe("JwtAuthGuard", () => {
         test("should throw UnauthorizedException when Authorization header does not start with Bearer", async () => {
             const request = createMockRequest("Basic some-token");
             const context = createMockExecutionContext(request);
+            jwtAuthService.extractBearerToken.mockImplementation(() => {
+                throw new UnauthorizedException("Missing or invalid Authorization header");
+            });
 
             await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
             await expect(guard.canActivate(context)).rejects.toThrow(
@@ -95,15 +101,19 @@ describe("JwtAuthGuard", () => {
         test("should throw UnauthorizedException when JWT verification fails", async () => {
             const request = createMockRequest("Bearer invalid-token");
             const context = createMockExecutionContext(request);
-            jwtService.verifyAsync.mockRejectedValue(new Error("Invalid token"));
+            jwtAuthService.extractBearerToken.mockReturnValue("invalid-token");
+            jwtAuthService.verify.mockImplementation(() => {
+                throw new UnauthorizedException("Invalid or expired token");
+            });
 
-            await expect(guard.canActivate(context)).rejects.toThrow(Error);
+            await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
         });
 
         test("should throw UnauthorizedException when room does not exist", async () => {
             const request = createMockRequest("Bearer valid-token");
             const context = createMockExecutionContext(request);
-            jwtService.verifyAsync.mockResolvedValue(mockPayload);
+            jwtAuthService.extractBearerToken.mockReturnValue("valid-token");
+            jwtAuthService.verify.mockReturnValue(mockPayload);
             roomsService.getByCode.mockResolvedValue(null as unknown as RoomStoreModel);
 
             await expect(guard.canActivate(context)).rejects.toThrow(UnauthorizedException);
@@ -113,7 +123,8 @@ describe("JwtAuthGuard", () => {
         test("should throw UnauthorizedException when user is not a member of the room", async () => {
             const request = createMockRequest("Bearer valid-token");
             const context = createMockExecutionContext(request);
-            jwtService.verifyAsync.mockResolvedValue(mockPayload);
+            jwtAuthService.extractBearerToken.mockReturnValue("valid-token");
+            jwtAuthService.verify.mockReturnValue(mockPayload);
             roomsService.getByCode.mockResolvedValue(createMockRoom());
             roomsService.isMember.mockResolvedValue(false);
 
@@ -126,7 +137,8 @@ describe("JwtAuthGuard", () => {
         test("should return true and set req.user when authentication succeeds", async () => {
             const request = createMockRequest("Bearer valid-token");
             const context = createMockExecutionContext(request);
-            jwtService.verifyAsync.mockResolvedValue(mockPayload);
+            jwtAuthService.extractBearerToken.mockReturnValue("valid-token");
+            jwtAuthService.verify.mockReturnValue(mockPayload);
             roomsService.getByCode.mockResolvedValue(createMockRoom());
             roomsService.isMember.mockResolvedValue(true);
 
@@ -134,7 +146,7 @@ describe("JwtAuthGuard", () => {
 
             expect(result).toBe(true);
             expect(request.user).toEqual(mockPayload);
-            expect(jwtService.verifyAsync).toHaveBeenCalledWith("valid-token");
+            expect(jwtAuthService.verify).toHaveBeenCalledWith("valid-token");
             expect(roomsService.getByCode).toHaveBeenCalledWith("ABCD12");
             expect(roomsService.isMember).toHaveBeenCalledWith("ABCD12", "user-123");
         });
@@ -142,13 +154,14 @@ describe("JwtAuthGuard", () => {
         test("should correctly extract token with extra whitespace", async () => {
             const request = createMockRequest("Bearer   token-with-spaces  ");
             const context = createMockExecutionContext(request);
-            jwtService.verifyAsync.mockResolvedValue(mockPayload);
+            jwtAuthService.extractBearerToken.mockReturnValue("token-with-spaces");
+            jwtAuthService.verify.mockReturnValue(mockPayload);
             roomsService.getByCode.mockResolvedValue(createMockRoom());
             roomsService.isMember.mockResolvedValue(true);
 
             await guard.canActivate(context);
 
-            expect(jwtService.verifyAsync).toHaveBeenCalledWith("token-with-spaces");
+            expect(jwtAuthService.verify).toHaveBeenCalledWith("token-with-spaces");
         });
     });
 });

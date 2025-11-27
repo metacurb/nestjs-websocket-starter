@@ -11,7 +11,7 @@ import { PinoLogger } from "nestjs-pino";
 import { Server, Socket } from "socket.io";
 import { v4 as uuid } from "uuid";
 
-import { EventsAuthService } from "../auth/events-auth.service";
+import { JwtAuthService } from "../auth/jwt-auth.service";
 import { WsDomainExceptionFilter } from "../filters/ws-exception.filter";
 import { correlationStorage } from "../logging/correlation.context";
 import { CorrelationIdInterceptor } from "../logging/interceptors/correlation-id.interceptor";
@@ -35,7 +35,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     server: Server;
 
     constructor(
-        private readonly eventsAuthService: EventsAuthService,
+        private readonly jwtAuthService: JwtAuthService,
         private readonly logger: PinoLogger,
         private readonly roomsService: RoomsService,
     ) {
@@ -168,7 +168,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         await correlationStorage.run({ correlationId: uuid() }, async () => {
             try {
                 const token = socket.handshake.auth?.token;
-                const payload = this.eventsAuthService.verifyToken(token);
+                const payload = this.jwtAuthService.verify(token);
                 const { roomCode, userId } = payload;
 
                 this.logger.debug({ userId, roomCode }, "Socket connecting");
