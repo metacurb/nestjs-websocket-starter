@@ -5,6 +5,12 @@ import { ConfigService as NestConfigService } from "@nestjs/config";
 export class ConfigService {
     constructor(private config: NestConfigService) {}
 
+    get corsOrigins(): string | string[] {
+        const origins = this.config.get<string>("CORS_ORIGINS", "*");
+        if (origins === "*") return "*";
+        return origins.split(",").map((o) => o.trim());
+    }
+
     get jwtSecret() {
         return this.config.getOrThrow<string>("JWT_SECRET");
     }

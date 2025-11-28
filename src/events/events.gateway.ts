@@ -24,12 +24,7 @@ import { type GatewayEvents } from "./model/room.event";
 @UseFilters(WsDomainExceptionFilter)
 @UseInterceptors(CorrelationIdInterceptor)
 @UsePipes(new ValidationPipe())
-@WebSocketGateway({
-    cors: {
-        origin: "*",
-    },
-    namespace: "rooms",
-})
+@WebSocketGateway({ namespace: "rooms" })
 export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @WebSocketServer()
     server: Server;

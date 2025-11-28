@@ -18,6 +18,7 @@ Create a `.env` file with the following variables:
 
 | Variable                       | Description                                        |
 | ------------------------------ | -------------------------------------------------- |
+| `CORS_ORIGINS`                 | Allowed origins, comma-separated (default: *)      |
 | `JWT_SECRET`                   | Secret key for signing JWTs                        |
 | `REDIS_HOST`                   | Redis server host                                  |
 | `REDIS_PORT`                   | Redis server port                                  |

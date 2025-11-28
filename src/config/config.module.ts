@@ -10,6 +10,7 @@ import { ConfigService } from "./config.service";
         NestConfigModule.forRoot({
             isGlobal: false,
             validationSchema: joi.object({
+                CORS_ORIGINS: joi.string().default("*"),
                 JWT_SECRET: joi.string().required(),
                 REDIS_HOST: joi.string().required(),
                 REDIS_PORT: joi.number().required(),
