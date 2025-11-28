@@ -1,6 +1,7 @@
 import type { INestApplication } from "@nestjs/common";
 import { NestFactory } from "@nestjs/core";
 import { useContainer } from "class-validator";
+import helmet from "helmet";
 import { Logger } from "nestjs-pino";
 
 import { SocketIoAdapter } from "./adapters/socket-io.adapter";
@@ -46,6 +47,13 @@ async function bootstrap() {
     useContainer(app.select(AppModule), { fallbackOnErrors: true });
     app.useLogger(logger);
     app.enableCors({ origin: configService.corsOrigins, credentials: true });
+    app.use(
+        helmet({
+            contentSecurityPolicy: false,
+            crossOriginResourcePolicy: { policy: "cross-origin" },
+            crossOriginEmbedderPolicy: false,
+        }),
+    );
     app.useWebSocketAdapter(new SocketIoAdapter(app));
 
     app.enableShutdownHooks();
