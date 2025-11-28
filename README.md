@@ -16,17 +16,19 @@ $ yarn install
 
 Create a `.env` file with the following variables:
 
-| Variable                       | Description                               |
-| ------------------------------ | ----------------------------------------- |
-| `JWT_SECRET`                   | Secret key for signing JWTs               |
-| `REDIS_HOST`                   | Redis server host                         |
-| `REDIS_PORT`                   | Redis server port                         |
-| `ROOM_CODE_ALPHABET`           | Characters used to generate room codes    |
-| `ROOM_CODE_LENGTH`             | Length of generated room codes            |
-| `ROOM_MAX_USERS`               | Maximum allowed users per room            |
-| `ROOM_TTL_SECONDS`             | TTL for rooms and JWT expiry (in seconds) |
-| `USER_DISPLAY_NAME_MIN_LENGTH` | Minimum length for user display names     |
-| `USER_DISPLAY_NAME_MAX_LENGTH` | Maximum length for user display names     |
+| Variable                       | Description                                        |
+| ------------------------------ | -------------------------------------------------- |
+| `JWT_SECRET`                   | Secret key for signing JWTs                        |
+| `REDIS_HOST`                   | Redis server host                                  |
+| `REDIS_PORT`                   | Redis server port                                  |
+| `ROOM_CODE_ALPHABET`           | Characters used to generate room codes             |
+| `ROOM_CODE_LENGTH`             | Length of generated room codes                     |
+| `ROOM_MAX_USERS`               | Maximum allowed users per room                     |
+| `ROOM_TTL_SECONDS`             | TTL for rooms and JWT expiry (in seconds)          |
+| `THROTTLE_TTL_MS`              | Rate limit window in milliseconds (default: 60000) |
+| `THROTTLE_LIMIT`               | Max requests per window (default: 20)              |
+| `USER_DISPLAY_NAME_MIN_LENGTH` | Minimum length for user display names              |
+| `USER_DISPLAY_NAME_MAX_LENGTH` | Maximum length for user display names              |
 
 ## Running the app
 

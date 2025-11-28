@@ -33,6 +33,14 @@ export class ConfigService {
         return this.config.getOrThrow<number>("ROOM_TTL_SECONDS");
     }
 
+    get throttleTtlMs() {
+        return this.config.get<number>("THROTTLE_TTL_MS", 60000);
+    }
+
+    get throttleLimit() {
+        return this.config.get<number>("THROTTLE_LIMIT", 20);
+    }
+
     get userDisplayNameMaxLength() {
         return this.config.getOrThrow<number>("USER_DISPLAY_NAME_MAX_LENGTH");
     }
