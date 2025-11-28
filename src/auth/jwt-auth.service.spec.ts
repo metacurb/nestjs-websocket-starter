@@ -96,11 +96,13 @@ describe("JwtAuthService", () => {
 
         test("should extract token from valid Bearer header", () => {
             const result = service.extractBearerToken("Bearer my-token");
+
             expect(result).toBe("my-token");
         });
 
         test("should trim whitespace from extracted token", () => {
             const result = service.extractBearerToken("Bearer   token-with-spaces  ");
+
             expect(result).toBe("token-with-spaces");
         });
     });
@@ -116,4 +118,3 @@ describe("JwtAuthService", () => {
         });
     });
 });
-

@@ -72,4 +72,3 @@ describe("HttpDomainExceptionFilter", () => {
         expect(() => filter.catch(exception)).toThrow(expectedMessage);
     });
 });
-

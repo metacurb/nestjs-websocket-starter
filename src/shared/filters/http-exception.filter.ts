@@ -42,4 +42,3 @@ export class HttpDomainExceptionFilter implements ExceptionFilter {
         return new BadRequestException(exception.message);
     }
 }
-

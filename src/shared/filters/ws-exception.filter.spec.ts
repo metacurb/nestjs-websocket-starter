@@ -1,13 +1,13 @@
 import type { ArgumentsHost } from "@nestjs/common";
 import type { Socket } from "socket.io";
 
+import { mapDomainExceptionToRoomErrorEvent } from "../../events/mapping/map-domain-exception-to-room-error-event";
 import {
     InvalidOperationException,
     RoomNotFoundException,
     UnauthorizedHostActionException,
 } from "../../rooms/exceptions/room.exceptions";
 import { UserNotFoundException } from "../../users/exceptions/user.exceptions";
-import { mapDomainExceptionToRoomErrorEvent } from "../../events/mapping/map-domain-exception-to-room-error-event";
 import { RoomErrorCode } from "../errors/error-codes";
 import { WsDomainExceptionFilter } from "./ws-exception.filter";
 
@@ -91,4 +91,3 @@ describe("WsDomainExceptionFilter", () => {
         expect(mockSocket.emit).toHaveBeenCalledWith("room:error", mappedError);
     });
 });
-

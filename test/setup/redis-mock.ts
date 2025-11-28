@@ -17,4 +17,3 @@ export const redisMockProvider = {
     provide: REDIS_CLIENT,
     useFactory: () => createRedisMock(),
 };
-

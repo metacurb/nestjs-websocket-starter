@@ -1,13 +1,13 @@
 import { ArgumentsHost, Catch, ExceptionFilter } from "@nestjs/common";
 import { Socket } from "socket.io";
 
+import { mapDomainExceptionToRoomErrorEvent } from "../../events/mapping/map-domain-exception-to-room-error-event";
 import {
     InvalidOperationException,
     RoomNotFoundException,
     UnauthorizedHostActionException,
 } from "../../rooms/exceptions/room.exceptions";
 import { UserNotFoundException } from "../../users/exceptions/user.exceptions";
-import { mapDomainExceptionToRoomErrorEvent } from "../../events/mapping/map-domain-exception-to-room-error-event";
 
 const DOMAIN_EXCEPTIONS = [
     InvalidOperationException,
@@ -26,4 +26,3 @@ export class WsDomainExceptionFilter implements ExceptionFilter {
         client.emit("room:error", errorEvent);
     }
 }
-
