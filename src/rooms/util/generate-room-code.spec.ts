@@ -1,5 +1,7 @@
 import { customAlphabet } from "nanoid";
 
+import { ROOM_CODE_GENERATION_MAX_ATTEMPTS } from "../constants";
+import { InvalidOperationException } from "../exceptions/room.exceptions";
 import { generateRoomCode } from "./generate-room-code";
 
 jest.mock("nanoid", () => ({
@@ -38,5 +40,14 @@ describe("generateRoomCode", () => {
         expect(customAlphabet).toHaveBeenCalledWith(testRoomCodeAlphabet, testRoomCodeLength);
         expect(mockGenerator).toHaveBeenCalledTimes(3);
         expect(result).toBe("foo");
+    });
+
+    test("should throw InvalidOperationException after max attempts of profane words", () => {
+        mockGenerator.mockReturnValue("SHIT");
+
+        expect(() => generateRoomCode(testRoomCodeAlphabet, testRoomCodeLength)).toThrow(
+            InvalidOperationException,
+        );
+        expect(mockGenerator).toHaveBeenCalledTimes(ROOM_CODE_GENERATION_MAX_ATTEMPTS);
     });
 });

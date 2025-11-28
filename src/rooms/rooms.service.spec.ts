@@ -211,6 +211,7 @@ describe("RoomsService", () => {
 
         test("should create a new room with host user", async () => {
             const mockUser = createMockUser();
+            roomsRepository.reserveRoomCode.mockResolvedValue(true);
             usersService.create.mockResolvedValue(mockUser);
             jwtAuthService.sign.mockReturnValue("test-token");
 
@@ -221,6 +222,7 @@ describe("RoomsService", () => {
 
             expect(result.roomCode).toBeDefined();
             expect(result.token).toBe("test-token");
+            expect(roomsRepository.reserveRoomCode).toHaveBeenCalled();
             expect(roomsRepository.save).toHaveBeenCalled();
             expect(usersService.create).toHaveBeenCalled();
             expect(roomsRepository.addMember).toHaveBeenCalled();
@@ -229,6 +231,7 @@ describe("RoomsService", () => {
 
         test("should set TTL on room, user, and members set", async () => {
             const mockUser = createMockUser();
+            roomsRepository.reserveRoomCode.mockResolvedValue(true);
             usersService.create.mockResolvedValue(mockUser);
             jwtAuthService.sign.mockReturnValue("test-token");
 
@@ -236,6 +239,12 @@ describe("RoomsService", () => {
                 displayName: "Host User",
                 maxUsers: 5,
             });
+
+            // Room code reservation should use TTL
+            expect(roomsRepository.reserveRoomCode).toHaveBeenCalledWith(
+                expect.any(String),
+                mockRoomTtl,
+            );
 
             // Room should have TTL
             expect(roomsRepository.save).toHaveBeenCalledWith(
@@ -255,6 +264,35 @@ describe("RoomsService", () => {
                 result.roomCode,
                 mockRoomTtl,
             );
+        });
+
+        test("should retry room code reservation when code already taken", async () => {
+            const mockUser = createMockUser();
+            roomsRepository.reserveRoomCode
+                .mockResolvedValueOnce(false)
+                .mockResolvedValueOnce(false)
+                .mockResolvedValueOnce(true);
+            usersService.create.mockResolvedValue(mockUser);
+            jwtAuthService.sign.mockReturnValue("test-token");
+
+            const result = await service.create({
+                displayName: "Host User",
+                maxUsers: 5,
+            });
+
+            expect(result.roomCode).toBeDefined();
+            expect(roomsRepository.reserveRoomCode).toHaveBeenCalledTimes(3);
+        });
+
+        test("should throw InvalidOperationException after max reservation attempts", async () => {
+            roomsRepository.reserveRoomCode.mockResolvedValue(false);
+
+            await expect(
+                service.create({
+                    displayName: "Host User",
+                    maxUsers: 5,
+                }),
+            ).rejects.toThrow(InvalidOperationException);
         });
     });
 

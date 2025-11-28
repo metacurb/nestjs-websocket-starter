@@ -32,6 +32,12 @@ export class RedisService implements OnModuleDestroy {
         }
     }
 
+    async setIfNotExists(key: string, value: string, ttlSeconds: number): Promise<boolean> {
+        this.logger.trace({ key, ttlSeconds }, "SET NX EX");
+        const result = await this.client.set(key, value, "EX", ttlSeconds, "NX");
+        return result === "OK";
+    }
+
     async del(key: string): Promise<void> {
         this.logger.trace({ key }, "DEL");
         await this.client.del(key);
@@ -40,11 +46,6 @@ export class RedisService implements OnModuleDestroy {
     async expire(key: string, ttlSeconds: number): Promise<void> {
         this.logger.trace({ key, ttlSeconds }, "EXPIRE");
         await this.client.expire(key, ttlSeconds);
-    }
-
-    async ttl(key: string): Promise<number> {
-        this.logger.trace({ key }, "TTL");
-        return await this.client.ttl(key);
     }
 
     async getJson<T>(key: string): Promise<T | null> {
@@ -81,10 +82,5 @@ export class RedisService implements OnModuleDestroy {
     async sismember(key: string, value: string): Promise<boolean> {
         this.logger.trace({ key, value }, "SISMEMBER");
         return (await this.client.sismember(key, value)) === 1;
-    }
-
-    async keys(pattern: string): Promise<string[]> {
-        this.logger.trace({ pattern }, "KEYS");
-        return await this.client.keys(pattern);
     }
 }

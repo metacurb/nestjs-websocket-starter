@@ -7,6 +7,7 @@ import { RoomErrorCode } from "../shared/errors/error-codes";
 import { UserNotFoundException } from "../users/exceptions/user.exceptions";
 import type { UserStoreModel } from "../users/model/user-store.model";
 import { UsersService } from "../users/users.service";
+import { ROOM_CODE_RESERVATION_MAX_ATTEMPTS } from "./constants";
 import {
     InvalidOperationException,
     RoomNotFoundException,
@@ -49,13 +50,39 @@ export class RoomsService {
         return this.roomsRepository.isMember(roomCode, userId);
     }
 
-    async create({ displayName, maxUsers }: CreateRoomInput): Promise<RoomSessionDtoModel> {
-        const roomCode = generateRoomCode(
-            this.configService.roomCodeAlphabet,
-            this.configService.roomCodeLength,
-        );
+    private async reserveRoomCode(): Promise<string> {
+        let roomCode: string | null = null;
 
+        for (let i = 0; i < ROOM_CODE_RESERVATION_MAX_ATTEMPTS; i++) {
+            const candidate = generateRoomCode(
+                this.configService.roomCodeAlphabet,
+                this.configService.roomCodeLength,
+            );
+
+            const reserved = await this.roomsRepository.reserveRoomCode(
+                candidate,
+                this.configService.roomTtlSeconds,
+            );
+            if (reserved) {
+                roomCode = candidate;
+                break;
+            }
+        }
+
+        if (!roomCode) {
+            throw new InvalidOperationException(
+                `Unable to reserve a room code after ${ROOM_CODE_RESERVATION_MAX_ATTEMPTS} attempts.`,
+                RoomErrorCode.RoomCodeGenerationFailed,
+            );
+        }
+
+        return roomCode;
+    }
+
+    async create({ displayName, maxUsers }: CreateRoomInput): Promise<RoomSessionDtoModel> {
         const ttl = this.configService.roomTtlSeconds;
+
+        const roomCode = await this.reserveRoomCode();
         const user = await this.usersService.create(roomCode, displayName, ttl);
 
         const room: RoomStoreModel = {

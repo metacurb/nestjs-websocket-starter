@@ -1,0 +1,2 @@
+export const ROOM_CODE_GENERATION_MAX_ATTEMPTS = 50 as const;
+export const ROOM_CODE_RESERVATION_MAX_ATTEMPTS = 100 as const;

@@ -140,5 +140,28 @@ describe("RoomsRepository", () => {
             expect(redisService.expire).toHaveBeenCalledWith("room:ABCD12:users", 3600);
         });
     });
+
+    describe("reserveRoomCode", () => {
+        test("should return true when code is successfully reserved", async () => {
+            redisService.setIfNotExists.mockResolvedValue(true);
+
+            const result = await repository.reserveRoomCode("ABCD12", 3600);
+
+            expect(result).toBe(true);
+            expect(redisService.setIfNotExists).toHaveBeenCalledWith(
+                "room:ABCD12",
+                JSON.stringify({ code: "ABCD12" }),
+                3600,
+            );
+        });
+
+        test("should return false when code already exists", async () => {
+            redisService.setIfNotExists.mockResolvedValue(false);
+
+            const result = await repository.reserveRoomCode("ABCD12", 3600);
+
+            expect(result).toBe(false);
+        });
+    });
 });
 

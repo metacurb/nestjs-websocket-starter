@@ -47,4 +47,12 @@ export class RoomsRepository {
     async setMembersTtl(code: string, ttl: number): Promise<void> {
         await this.redis.expire(this.usersKey(code), ttl);
     }
+
+    async reserveRoomCode(code: string, ttl: number): Promise<boolean> {
+        const key = this.roomKey(code);
+
+        const placeholder = JSON.stringify({ code });
+
+        return await this.redis.setIfNotExists(key, placeholder, ttl);
+    }
 }

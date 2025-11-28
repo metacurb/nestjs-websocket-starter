@@ -59,33 +59,6 @@ describe("RedisService", () => {
         });
     });
 
-    describe("ttl", () => {
-        test("should return TTL for existing key", async () => {
-            redisClient.ttl.mockResolvedValue(3600);
-
-            const result = await service.ttl("test-key");
-
-            expect(result).toBe(3600);
-            expect(redisClient.ttl).toHaveBeenCalledWith("test-key");
-        });
-
-        test("should return -1 for key without expiration", async () => {
-            redisClient.ttl.mockResolvedValue(-1);
-
-            const result = await service.ttl("persistent-key");
-
-            expect(result).toBe(-1);
-        });
-
-        test("should return -2 for nonexistent key", async () => {
-            redisClient.ttl.mockResolvedValue(-2);
-
-            const result = await service.ttl("nonexistent-key");
-
-            expect(result).toBe(-2);
-        });
-    });
-
     describe("getJson", () => {
         test("should parse and return JSON object", async () => {
             const data = { name: "test", count: 42 };
@@ -111,6 +84,26 @@ describe("RedisService", () => {
             const result = await service.getJson<string[]>("array-key");
 
             expect(result).toEqual(data);
+        });
+    });
+
+    describe("setIfNotExists", () => {
+        test("should return true when key was set", async () => {
+            redisClient.set.mockResolvedValue("OK");
+
+            const result = await service.setIfNotExists("test-key", "value", 3600);
+
+            expect(result).toBe(true);
+            expect(redisClient.set).toHaveBeenCalledWith("test-key", "value", "EX", 3600, "NX");
+        });
+
+        test("should return false when key already exists", async () => {
+            redisClient.set.mockResolvedValue(null);
+
+            const result = await service.setIfNotExists("existing-key", "value", 3600);
+
+            expect(result).toBe(false);
+            expect(redisClient.set).toHaveBeenCalledWith("existing-key", "value", "EX", 3600, "NX");
         });
     });
 
