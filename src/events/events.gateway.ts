@@ -210,8 +210,8 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect, 
                     { roomCode, userId, socketId: socket.id },
                     "User connected to room",
                 );
-            } catch (error) {
-                this.logger.warn({ error }, "Connection failed");
+            } catch (err) {
+                this.logger.warn({ err }, "Connection failed");
                 socket.disconnect(true);
             }
         });
@@ -235,9 +235,9 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect, 
                 this.emitToRoom(roomCode, "user:disconnected", { user: updatedUser });
 
                 this.logger.info({ roomCode, userId }, "User disconnected from room");
-            } catch {
+            } catch (err) {
                 this.logger.info(
-                    { roomCode, userId },
+                    { err, roomCode, userId },
                     "User disconnected from room, but user not found",
                 );
             }

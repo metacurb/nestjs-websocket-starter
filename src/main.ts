@@ -32,8 +32,8 @@ async function gracefulShutdown(
         clearTimeout(forceExitTimer);
         logger.log("Graceful shutdown completed");
         process.exit(0);
-    } catch (error) {
-        logger.error(error, "Error during shutdown");
+    } catch (err) {
+        logger.error({ err }, "Error during shutdown");
         clearTimeout(forceExitTimer);
         process.exit(1);
     }

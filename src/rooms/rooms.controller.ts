@@ -25,7 +25,7 @@ import { JoinRoomInput } from "./model/input/join-room.input";
 import { RoomStoreModel } from "./model/store/room-store.model";
 import { RoomsService } from "./rooms.service";
 
-@UsePipes(new ValidationPipe({ forbidNonWhitelisted: true, whitelist: true }))
+@UsePipes(new ValidationPipe({ forbidNonWhitelisted: true, transform: true, whitelist: true }))
 @UseInterceptors(CorrelationIdInterceptor)
 @UseFilters(HttpDomainExceptionFilter)
 @Controller("rooms")
