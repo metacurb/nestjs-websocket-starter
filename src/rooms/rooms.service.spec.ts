@@ -162,20 +162,19 @@ describe("RoomsService", () => {
             const user1 = createMockUser({ id: "user-1", displayName: "User 1" });
             const user2 = createMockUser({ id: "user-2", displayName: "User 2" });
             roomsRepository.getMembers.mockResolvedValue(["user-1", "user-2"]);
-            usersService.findById.mockResolvedValueOnce(user1).mockResolvedValueOnce(user2);
+            usersService.findByIds.mockResolvedValue([user1, user2]);
 
             const result = await service.getRoomMembersWithDetails("ABCD12");
 
             expect(result).toEqual([user1, user2]);
             expect(roomsRepository.getMembers).toHaveBeenCalledWith("ABCD12");
-            expect(usersService.findById).toHaveBeenCalledWith("user-1");
-            expect(usersService.findById).toHaveBeenCalledWith("user-2");
+            expect(usersService.findByIds).toHaveBeenCalledWith(["user-1", "user-2"]);
         });
 
         test("should filter out null users", async () => {
             const user1 = createMockUser({ id: "user-1", displayName: "User 1" });
             roomsRepository.getMembers.mockResolvedValue(["user-1", "user-2"]);
-            usersService.findById.mockResolvedValueOnce(user1).mockResolvedValueOnce(null);
+            usersService.findByIds.mockResolvedValue([user1]);
 
             const result = await service.getRoomMembersWithDetails("ABCD12");
 
@@ -184,6 +183,7 @@ describe("RoomsService", () => {
 
         test("should return empty array when no members", async () => {
             roomsRepository.getMembers.mockResolvedValue([]);
+            usersService.findByIds.mockResolvedValue([]);
 
             const result = await service.getRoomMembersWithDetails("ABCD12");
 
@@ -628,9 +628,7 @@ describe("RoomsService", () => {
 
             await service.close("host-123", "ABCD12");
 
-            expect(usersService.delete).toHaveBeenCalledWith("host-123");
-            expect(usersService.delete).toHaveBeenCalledWith("user-1");
-            expect(usersService.delete).toHaveBeenCalledWith("user-2");
+            expect(usersService.deleteMany).toHaveBeenCalledWith(["host-123", "user-1", "user-2"]);
             expect(roomsRepository.delete).toHaveBeenCalledWith("ABCD12");
         });
 
@@ -649,26 +647,6 @@ describe("RoomsService", () => {
             await expect(service.close("host-123", "NOTFOUND")).rejects.toThrow(
                 RoomNotFoundException,
             );
-        });
-    });
-
-    describe("deleteRoom", () => {
-        test("should delete room and all member data", async () => {
-            roomsRepository.getMembers.mockResolvedValue(["user-1", "user-2"]);
-
-            await service.deleteRoom("ABCD12");
-
-            expect(usersService.delete).toHaveBeenCalledWith("user-1");
-            expect(usersService.delete).toHaveBeenCalledWith("user-2");
-            expect(roomsRepository.delete).toHaveBeenCalledWith("ABCD12");
-        });
-
-        test("should handle room with no members", async () => {
-            roomsRepository.getMembers.mockResolvedValue([]);
-
-            await service.deleteRoom("ABCD12");
-
-            expect(roomsRepository.delete).toHaveBeenCalledWith("ABCD12");
         });
     });
 });

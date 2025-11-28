@@ -15,11 +15,19 @@ export class UsersRepository {
         return this.redis.getJson<UserStoreModel>(this.key(id));
     }
 
+    async findByIds(ids: string[]): Promise<(UserStoreModel | null)[]> {
+        if (ids.length === 0) return [];
+        const keys = ids.map((id) => this.key(id));
+        return await this.redis.mgetJson<UserStoreModel>(...keys);
+    }
+
     async save(user: UserStoreModel, ttl?: number): Promise<void> {
         await this.redis.setJson(this.key(user.id), user, ttl);
     }
 
-    async delete(id: string): Promise<void> {
-        await this.redis.del(this.key(id));
+    async delete(...ids: string[]): Promise<void> {
+        if (ids.length === 0) return;
+        const keys = ids.map((id) => this.key(id));
+        await this.redis.del(...keys);
     }
 }

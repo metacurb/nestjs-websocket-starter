@@ -43,14 +43,6 @@ describe("RedisService", () => {
         });
     });
 
-    describe("del", () => {
-        test("should delete key", async () => {
-            await service.del("test-key");
-
-            expect(redisClient.del).toHaveBeenCalledWith("test-key");
-        });
-    });
-
     describe("expire", () => {
         test("should set expiration on key", async () => {
             await service.expire("test-key", 3600);
@@ -130,6 +122,93 @@ describe("RedisService", () => {
             await service.setJson("array-key", data);
 
             expect(redisClient.set).toHaveBeenCalledWith("array-key", JSON.stringify(data));
+        });
+    });
+
+    describe("mget", () => {
+        test("should return values for multiple keys", async () => {
+            redisClient.mget.mockResolvedValue(["value1", "value2", null]);
+
+            const result = await service.mget("key1", "key2", "key3");
+
+            expect(result).toEqual(["value1", "value2", null]);
+            expect(redisClient.mget).toHaveBeenCalledWith(["key1", "key2", "key3"]);
+        });
+
+        test("should return empty array when no keys provided", async () => {
+            const result = await service.mget();
+
+            expect(result).toEqual([]);
+            expect(redisClient.mget).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("mgetJson", () => {
+        test("should parse and return JSON objects for multiple keys", async () => {
+            const data1 = { name: "test1" };
+            const data2 = { name: "test2" };
+            redisClient.mget.mockResolvedValue([JSON.stringify(data1), JSON.stringify(data2)]);
+
+            const result = await service.mgetJson<typeof data1>("key1", "key2");
+
+            expect(result).toEqual([data1, data2]);
+        });
+
+        test("should return null for missing keys", async () => {
+            const data1 = { name: "test1" };
+            redisClient.mget.mockResolvedValue([JSON.stringify(data1), null]);
+
+            const result = await service.mgetJson<typeof data1>("key1", "key2");
+
+            expect(result).toEqual([data1, null]);
+        });
+
+        test("should return empty array when no keys provided", async () => {
+            const result = await service.mgetJson();
+
+            expect(result).toEqual([]);
+        });
+    });
+
+    describe("del", () => {
+        test("should delete a single key", async () => {
+            await service.del("key1");
+
+            expect(redisClient.del).toHaveBeenCalledWith(["key1"]);
+        });
+
+        test("should delete multiple keys", async () => {
+            await service.del("key1", "key2", "key3");
+
+            expect(redisClient.del).toHaveBeenCalledWith(["key1", "key2", "key3"]);
+        });
+
+        test("should not call del when no keys provided", async () => {
+            await service.del();
+
+            expect(redisClient.del).not.toHaveBeenCalled();
+        });
+    });
+
+    describe("ping", () => {
+        test("should return PONG", async () => {
+            redisClient.ping.mockResolvedValue("PONG");
+
+            const result = await service.ping();
+
+            expect(result).toBe("PONG");
+            expect(redisClient.ping).toHaveBeenCalled();
+        });
+    });
+
+    describe("keys", () => {
+        test("should return matching keys", async () => {
+            redisClient.keys.mockResolvedValue(["room:ABC", "room:DEF"]);
+
+            const result = await service.keys("room:*");
+
+            expect(result).toEqual(["room:ABC", "room:DEF"]);
+            expect(redisClient.keys).toHaveBeenCalledWith("room:*");
         });
     });
 });

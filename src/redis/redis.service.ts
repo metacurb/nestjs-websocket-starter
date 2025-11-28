@@ -1,5 +1,5 @@
 import { Inject, Injectable, OnModuleDestroy } from "@nestjs/common";
-import { ChainableCommander, Redis } from "ioredis";
+import { Redis } from "ioredis";
 import { PinoLogger } from "nestjs-pino";
 
 import { REDIS_CLIENT } from "./constants";
@@ -38,9 +38,10 @@ export class RedisService implements OnModuleDestroy {
         return result === "OK";
     }
 
-    async del(key: string): Promise<void> {
-        this.logger.trace({ key }, "DEL");
-        await this.client.del(key);
+    async del(...keys: string[]): Promise<void> {
+        if (keys.length === 0) return;
+        this.logger.trace({ count: keys.length, keys }, "DEL");
+        await this.client.del(keys);
     }
 
     async expire(key: string, ttlSeconds: number): Promise<void> {
@@ -57,11 +58,6 @@ export class RedisService implements OnModuleDestroy {
     async setJson<T>(key: string, value: T, ttlSeconds?: number): Promise<void> {
         const serialized = JSON.stringify(value);
         await this.set(key, serialized, ttlSeconds);
-    }
-
-    multi(): ChainableCommander {
-        this.logger.trace("MULTI");
-        return this.client.multi();
     }
 
     async sadd(key: string, ...values: string[]): Promise<void> {
@@ -92,5 +88,16 @@ export class RedisService implements OnModuleDestroy {
     async ping(): Promise<string> {
         this.logger.trace("PING");
         return await this.client.ping();
+    }
+
+    async mget(...keys: string[]): Promise<(string | null)[]> {
+        if (keys.length === 0) return [];
+        this.logger.trace({ count: keys.length }, "MGET");
+        return await this.client.mget(keys);
+    }
+
+    async mgetJson<T>(...keys: string[]): Promise<(T | null)[]> {
+        const results = await this.mget(...keys);
+        return results.map((raw) => (raw ? (JSON.parse(raw) as T) : null));
     }
 }

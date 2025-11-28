@@ -3,8 +3,8 @@ import type { TestingModule } from "@nestjs/testing";
 import { Test } from "@nestjs/testing";
 import { PinoLogger } from "nestjs-pino";
 
-import { UserNotFoundException } from "./exceptions/user.exceptions";
 import { ConfigService } from "../config/config.service";
+import { UserNotFoundException } from "./exceptions/user.exceptions";
 import type { UserStoreModel } from "./model/user-store.model";
 import { UsersRepository } from "./users.repository";
 import { UsersService } from "./users.service";
@@ -169,5 +169,48 @@ describe("UsersService", () => {
             expect(usersRepository.delete).toHaveBeenCalledWith("user-123");
         });
     });
-});
 
+    describe("findByIds", () => {
+        test("should return users for multiple ids", async () => {
+            const user1 = createMockUser({ id: "user-1" });
+            const user2 = createMockUser({ id: "user-2" });
+            usersRepository.findByIds.mockResolvedValue([user1, user2]);
+
+            const result = await service.findByIds(["user-1", "user-2"]);
+
+            expect(result).toEqual([user1, user2]);
+            expect(usersRepository.findByIds).toHaveBeenCalledWith(["user-1", "user-2"]);
+        });
+
+        test("should filter out null users", async () => {
+            const user1 = createMockUser({ id: "user-1" });
+            usersRepository.findByIds.mockResolvedValue([user1, null]);
+
+            const result = await service.findByIds(["user-1", "user-2"]);
+
+            expect(result).toEqual([user1]);
+        });
+
+        test("should return empty array when no users found", async () => {
+            usersRepository.findByIds.mockResolvedValue([null, null]);
+
+            const result = await service.findByIds(["user-1", "user-2"]);
+
+            expect(result).toEqual([]);
+        });
+    });
+
+    describe("deleteMany", () => {
+        test("should delete multiple users", async () => {
+            await service.deleteMany(["user-1", "user-2", "user-3"]);
+
+            expect(usersRepository.delete).toHaveBeenCalledWith("user-1", "user-2", "user-3");
+        });
+
+        test("should handle empty array", async () => {
+            await service.deleteMany([]);
+
+            expect(usersRepository.delete).toHaveBeenCalledWith();
+        });
+    });
+});

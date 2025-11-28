@@ -24,10 +24,7 @@ export class RoomsRepository {
     }
 
     async delete(code: string): Promise<void> {
-        const multi = this.redis.multi();
-        multi.del(this.usersKey(code));
-        multi.del(this.roomKey(code));
-        await multi.exec();
+        await this.redis.del(this.usersKey(code), this.roomKey(code));
     }
 
     async addMember(code: string, userId: string): Promise<void> {

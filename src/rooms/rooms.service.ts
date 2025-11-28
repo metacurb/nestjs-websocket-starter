@@ -228,7 +228,7 @@ export class RoomsService {
         }
 
         const members = await this.getRoomMembers(roomCode);
-        await Promise.all(members.map((id) => this.usersService.delete(id)));
+        await this.usersService.deleteMany(members);
         await this.roomsRepository.delete(roomCode);
 
         this.logger.info({ roomCode, memberCount: members.length }, "Room closed");
@@ -297,19 +297,8 @@ export class RoomsService {
         return updatedRoom;
     }
 
-    async deleteRoom(roomCode: string): Promise<void> {
-        this.logger.info({ roomCode }, "Deleting room");
-
-        const members = await this.getRoomMembers(roomCode);
-        await Promise.all(members.map((id) => this.usersService.delete(id)));
-        await this.roomsRepository.delete(roomCode);
-
-        this.logger.info({ roomCode, memberCount: members.length }, "Room deleted");
-    }
-
     async getRoomMembersWithDetails(code: string): Promise<UserStoreModel[]> {
         const memberIds = await this.getRoomMembers(code);
-        const members = await Promise.all(memberIds.map((id) => this.usersService.findById(id)));
-        return members.filter((m): m is UserStoreModel => m !== null);
+        return this.usersService.findByIds(memberIds);
     }
 }

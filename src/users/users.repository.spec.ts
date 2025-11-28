@@ -83,5 +83,51 @@ describe("UsersRepository", () => {
             expect(redisService.del).toHaveBeenCalledWith("user:user-123");
         });
     });
-});
 
+    describe("findByIds", () => {
+        test("should return users for multiple ids", async () => {
+            const user1 = createMockUser({ id: "user-1" });
+            const user2 = createMockUser({ id: "user-2" });
+            redisService.mgetJson.mockResolvedValue([user1, user2]);
+
+            const result = await repository.findByIds(["user-1", "user-2"]);
+
+            expect(result).toEqual([user1, user2]);
+            expect(redisService.mgetJson).toHaveBeenCalledWith("user:user-1", "user:user-2");
+        });
+
+        test("should return empty array when no ids provided", async () => {
+            const result = await repository.findByIds([]);
+
+            expect(result).toEqual([]);
+            expect(redisService.mgetJson).not.toHaveBeenCalled();
+        });
+
+        test("should include null for missing users", async () => {
+            const user1 = createMockUser({ id: "user-1" });
+            redisService.mgetJson.mockResolvedValue([user1, null]);
+
+            const result = await repository.findByIds(["user-1", "user-2"]);
+
+            expect(result).toEqual([user1, null]);
+        });
+    });
+
+    describe("deleteMany", () => {
+        test("should delete multiple users", async () => {
+            await repository.delete("user-1", "user-2", "user-3");
+
+            expect(redisService.del).toHaveBeenCalledWith(
+                "user:user-1",
+                "user:user-2",
+                "user:user-3",
+            );
+        });
+
+        test("should not call del when no ids provided", async () => {
+            await repository.delete();
+
+            expect(redisService.del).not.toHaveBeenCalled();
+        });
+    });
+});

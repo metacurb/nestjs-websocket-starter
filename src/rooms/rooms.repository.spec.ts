@@ -1,7 +1,6 @@
 import { createMock } from "@golevelup/ts-jest";
 import type { TestingModule } from "@nestjs/testing";
 import { Test } from "@nestjs/testing";
-import type { ChainableCommander } from "ioredis";
 
 import { RedisService } from "../redis/redis.service";
 import type { RoomStoreModel } from "./model/store/room-store.model";
@@ -80,36 +79,10 @@ describe("RoomsRepository", () => {
     });
 
     describe("delete", () => {
-        test("should delete room and members set atomically using multi", async () => {
-            const mockMulti = {
-                del: jest.fn().mockReturnThis(),
-                exec: jest.fn().mockResolvedValue([]),
-            } as unknown as jest.Mocked<ChainableCommander>;
-
-            redisService.multi.mockReturnValue(mockMulti);
-
+        test("should delete room and members set using batch delete", async () => {
             await repository.delete("ABCD12");
 
-            expect(redisService.multi).toHaveBeenCalled();
-            expect(mockMulti.del).toHaveBeenCalledWith("room:ABCD12:users");
-            expect(mockMulti.del).toHaveBeenCalledWith("room:ABCD12");
-            expect(mockMulti.exec).toHaveBeenCalled();
-        });
-
-        test("should delete users key before room key", async () => {
-            const mockMulti = {
-                del: jest.fn().mockReturnThis(),
-                exec: jest.fn().mockResolvedValue([]),
-            } as unknown as jest.Mocked<ChainableCommander>;
-
-            redisService.multi.mockReturnValue(mockMulti);
-
-            await repository.delete("ABCD12");
-
-            const calls = mockMulti.del.mock.calls;
-
-            expect(calls[0]![0]).toBe("room:ABCD12:users");
-            expect(calls[1]![0]).toBe("room:ABCD12");
+            expect(redisService.del).toHaveBeenCalledWith("room:ABCD12:users", "room:ABCD12");
         });
     });
 

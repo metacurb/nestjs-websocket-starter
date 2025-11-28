@@ -39,6 +39,11 @@ export class UsersService {
         return this.usersRepository.findById(userId);
     }
 
+    async findByIds(userIds: string[]): Promise<UserStoreModel[]> {
+        const users = await this.usersRepository.findByIds(userIds);
+        return users.filter((u): u is UserStoreModel => u !== null);
+    }
+
     async updateConnection(userId: string, socketId: string): Promise<UserStoreModel> {
         const user = await this.getById(userId);
         const updated: UserStoreModel = { ...user, isConnected: true, socketId };
@@ -57,5 +62,9 @@ export class UsersService {
 
     async delete(userId: string): Promise<void> {
         await this.usersRepository.delete(userId);
+    }
+
+    async deleteMany(userIds: string[]): Promise<void> {
+        await this.usersRepository.delete(...userIds);
     }
 }
