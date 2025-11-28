@@ -147,7 +147,7 @@ export class RoomsService {
         };
     }
 
-    async leave(roomCode: string, userId: string): Promise<void> {
+    async leave(roomCode: string, userId: string): Promise<{ newHostId?: string }> {
         this.logger.info({ roomCode, userId }, "User leaving room");
 
         const isMember = await this.isMember(roomCode, userId);
@@ -160,7 +160,7 @@ export class RoomsService {
 
         if (!room) {
             this.logger.info({ roomCode }, "Room no longer exists");
-            return;
+            return {};
         }
 
         if (room.hostId === userId) {
@@ -169,7 +169,7 @@ export class RoomsService {
             if (remainingMembers.length === 0) {
                 this.logger.info({ roomCode }, "Last member left, deleting room");
                 await this.roomsRepository.delete(roomCode);
-                return;
+                return {};
             }
 
             const nextHost = remainingMembers[0]!;
@@ -180,9 +180,13 @@ export class RoomsService {
 
             const updatedRoom: RoomStoreModel = { ...room, hostId: nextHost };
             await this.roomsRepository.save(updatedRoom);
+
+            this.logger.info({ roomCode, userId }, "User left room");
+            return { newHostId: nextHost };
         }
 
         this.logger.info({ roomCode, userId }, "User left room");
+        return {};
     }
 
     async kick(

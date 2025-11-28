@@ -141,7 +141,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect, 
 
         this.logger.info({ roomCode, userId }, "User leaving room");
 
-        await this.roomsService.leave(roomCode, userId);
+        const { newHostId } = await this.roomsService.leave(roomCode, userId);
 
         this.disconnectUser(socket.id);
 
@@ -149,6 +149,11 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect, 
             reason: "LEFT",
             userId,
         });
+
+        if (newHostId) {
+            this.emitToRoom(roomCode, "room:host_updated", { hostId: newHostId });
+            this.logger.info({ roomCode, newHostId }, "Host transferred after leave");
+        }
 
         this.logger.info({ roomCode, userId }, "User left room");
     }

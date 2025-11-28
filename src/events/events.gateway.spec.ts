@@ -153,7 +153,7 @@ describe("EventsGateway", () => {
 
     describe("onLeave", () => {
         test("should leave room, disconnect user, and emit user:left", async () => {
-            roomsService.leave.mockResolvedValue(undefined);
+            roomsService.leave.mockResolvedValue({});
 
             await gateway.onLeave(mockSocket);
 
@@ -164,6 +164,21 @@ describe("EventsGateway", () => {
             expect(mockServer.emit).toHaveBeenCalledWith("user:left", {
                 reason: "LEFT",
                 userId: "user-123",
+            });
+        });
+
+        test("should emit room:host_updated when host leaves and transfers to new host", async () => {
+            roomsService.leave.mockResolvedValue({ newHostId: "new-host-123" });
+
+            await gateway.onLeave(mockSocket);
+
+            expect(roomsService.leave).toHaveBeenCalledWith("ABCD12", "user-123");
+            expect(mockServer.emit).toHaveBeenCalledWith("user:left", {
+                reason: "LEFT",
+                userId: "user-123",
+            });
+            expect(mockServer.emit).toHaveBeenCalledWith("room:host_updated", {
+                hostId: "new-host-123",
             });
         });
     });
