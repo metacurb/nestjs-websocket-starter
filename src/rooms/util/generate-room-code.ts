@@ -1,19 +1,16 @@
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const Filter = require("bad-words");
+import { profanity } from "@2toad/profanity";
 import { customAlphabet } from "nanoid";
 
 import { RoomErrorCode } from "../../shared/errors/error-codes";
 import { ROOM_CODE_GENERATION_MAX_ATTEMPTS } from "../constants";
 import { InvalidOperationException } from "../exceptions/room.exceptions";
 
-const filter = new Filter();
-
 export const generateRoomCode = (alphabet: string, length: number): string => {
     const generator = customAlphabet(alphabet, length);
 
     for (let i = 0; i < ROOM_CODE_GENERATION_MAX_ATTEMPTS; i++) {
         const code = generator();
-        if (!filter.isProfane(code)) {
+        if (!profanity.exists(code)) {
             return code;
         }
     }

@@ -1,6 +1,7 @@
-import { IsUUID } from "class-validator";
+import { IsNotEmpty, IsString } from "class-validator";
 
 export class KickUserInput {
-    @IsUUID()
+    @IsNotEmpty()
+    @IsString()
     kickUserId!: string;
 }

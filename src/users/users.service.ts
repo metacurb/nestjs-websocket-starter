@@ -1,6 +1,6 @@
 import { Injectable } from "@nestjs/common";
+import { nanoid } from "nanoid";
 import { PinoLogger } from "nestjs-pino";
-import { v4 as uuid } from "uuid";
 
 import { ConfigService } from "../config/config.service";
 import { UserNotFoundException } from "./exceptions/user.exceptions";
@@ -19,7 +19,7 @@ export class UsersService {
 
     async create(roomCode: string, displayName: string, ttl?: number): Promise<UserStoreModel> {
         const user: UserStoreModel = {
-            id: uuid(),
+            id: nanoid(),
             displayName,
             roomCode,
             isConnected: false,

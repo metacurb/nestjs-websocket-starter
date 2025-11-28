@@ -188,7 +188,7 @@ A single JWT handles all authentication.
 ```json
 {
     "roomCode": "ABCD",
-    "userId": "uuid"
+    "userId": "<string>"
 }
 ```
 

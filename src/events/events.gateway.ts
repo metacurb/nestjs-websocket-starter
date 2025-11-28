@@ -13,9 +13,9 @@ import {
     WebSocketGateway,
     WebSocketServer,
 } from "@nestjs/websockets";
+import { nanoid } from "nanoid";
 import { PinoLogger } from "nestjs-pino";
 import { Server, Socket } from "socket.io";
-import { v4 as uuid } from "uuid";
 
 import { JwtAuthService } from "../auth/jwt-auth.service";
 import { correlationStorage } from "../logging/correlation.context";
@@ -175,7 +175,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect, 
     }
 
     async handleConnection(socket: Socket) {
-        await correlationStorage.run({ correlationId: uuid() }, async () => {
+        await correlationStorage.run({ correlationId: nanoid() }, async () => {
             try {
                 const token = socket.handshake.auth?.token;
                 const payload = this.jwtAuthService.verify(token);
@@ -221,7 +221,7 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect, 
         @ConnectedSocket()
         socket: Socket,
     ) {
-        await correlationStorage.run({ correlationId: uuid() }, async () => {
+        await correlationStorage.run({ correlationId: nanoid() }, async () => {
             if (!socket.data?.roomCode || !socket.data?.userId) {
                 return;
             }
