@@ -51,6 +51,10 @@ export class ConfigService {
         return this.config.getOrThrow<number>("ROOM_TTL_SECONDS");
     }
 
+    get shutdownTimeoutMs() {
+        return this.config.getOrThrow<number>("SHUTDOWN_TIMEOUT_MS");
+    }
+
     get throttleTtlMs() {
         return this.config.getOrThrow<number>("THROTTLE_TTL_MS");
     }

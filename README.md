@@ -29,6 +29,7 @@ Create a `.env` file with the following variables:
 | `ROOM_CODE_LENGTH`             | Length of generated room codes                     |
 | `ROOM_MAX_USERS`               | Maximum allowed users per room                     |
 | `ROOM_TTL_SECONDS`             | TTL for rooms and JWT expiry (in seconds)          |
+| `SHUTDOWN_TIMEOUT_MS`          | Graceful shutdown timeout in ms (default: 10000)   |
 | `THROTTLE_TTL_MS`              | Rate limit window in milliseconds (default: 60000) |
 | `THROTTLE_LIMIT`               | Max requests per window (default: 20)              |
 | `USER_DISPLAY_NAME_MIN_LENGTH` | Minimum length for user display names              |

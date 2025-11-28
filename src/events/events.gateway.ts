@@ -1,4 +1,10 @@
-import { UseFilters, UseInterceptors, UsePipes, ValidationPipe } from "@nestjs/common";
+import {
+    OnModuleDestroy,
+    UseFilters,
+    UseInterceptors,
+    UsePipes,
+    ValidationPipe,
+} from "@nestjs/common";
 import type { OnGatewayConnection, OnGatewayDisconnect } from "@nestjs/websockets";
 import {
     ConnectedSocket,
@@ -25,7 +31,7 @@ import { type GatewayEvents } from "./model/room.event";
 @UseInterceptors(CorrelationIdInterceptor)
 @UsePipes(new ValidationPipe())
 @WebSocketGateway({ namespace: "rooms" })
-export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleDestroy {
     @WebSocketServer()
     server!: Server;
 
@@ -35,6 +41,15 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
         private readonly roomsService: RoomsService,
     ) {
         this.logger.setContext(this.constructor.name);
+    }
+
+    async onModuleDestroy(): Promise<void> {
+        this.logger.info("Gracefully disconnecting all WebSocket clients");
+        const sockets = await this.server.fetchSockets();
+        if (sockets.length > 0) {
+            this.server.disconnectSockets(true);
+            this.logger.info({ socketCount: sockets.length }, "Disconnected all WebSocket clients");
+        }
     }
 
     private emitToRoom<E extends keyof GatewayEvents>(

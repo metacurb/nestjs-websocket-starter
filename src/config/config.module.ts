@@ -21,6 +21,7 @@ import { ConfigService } from "./config.service";
                 ROOM_CODE_LENGTH: joi.number().required(),
                 ROOM_MAX_USERS: joi.number().required(),
                 ROOM_TTL_SECONDS: joi.number().required(),
+                SHUTDOWN_TIMEOUT_MS: joi.number().default(10000),
                 THROTTLE_TTL_MS: joi.number().default(60000),
                 THROTTLE_LIMIT: joi.number().default(20),
                 USER_DISPLAY_NAME_MAX_LENGTH: joi.number().required(),

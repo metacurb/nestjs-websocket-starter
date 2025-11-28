@@ -13,6 +13,7 @@ export function setupTestEnv() {
     process.env.ROOM_CODE_LENGTH = "6";
     process.env.ROOM_MAX_USERS = "50";
     process.env.ROOM_TTL_SECONDS = "3600";
+    process.env.SHUTDOWN_TIMEOUT_MS = "5000";
     process.env.THROTTLE_TTL_MS = "60000";
     process.env.THROTTLE_LIMIT = "100";
     process.env.CORS_ORIGINS = "*";
