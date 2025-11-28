@@ -24,8 +24,10 @@ export class RoomsRepository {
     }
 
     async delete(code: string): Promise<void> {
-        await this.redis.del(this.usersKey(code));
-        await this.redis.del(this.roomKey(code));
+        const multi = this.redis.multi();
+        multi.del(this.usersKey(code));
+        multi.del(this.roomKey(code));
+        await multi.exec();
     }
 
     async addMember(code: string, userId: string): Promise<void> {
@@ -50,9 +52,7 @@ export class RoomsRepository {
 
     async reserveRoomCode(code: string, ttl: number): Promise<boolean> {
         const key = this.roomKey(code);
-
         const placeholder = JSON.stringify({ code });
-
         return await this.redis.setIfNotExists(key, placeholder, ttl);
     }
 }
