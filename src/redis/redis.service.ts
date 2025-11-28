@@ -88,4 +88,9 @@ export class RedisService implements OnModuleDestroy {
         this.logger.trace({ pattern }, "KEYS");
         return await this.client.keys(pattern);
     }
+
+    async ping(): Promise<string> {
+        this.logger.trace("PING");
+        return await this.client.ping();
+    }
 }
