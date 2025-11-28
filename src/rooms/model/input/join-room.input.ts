@@ -5,5 +5,5 @@ import { USER_DISPLAY_NAME_MAX_LENGTH, USER_DISPLAY_NAME_MIN_LENGTH } from "../.
 export class JoinRoomInput {
     @Length(USER_DISPLAY_NAME_MIN_LENGTH, USER_DISPLAY_NAME_MAX_LENGTH)
     @IsString()
-    displayName: string;
+    displayName!: string;
 }

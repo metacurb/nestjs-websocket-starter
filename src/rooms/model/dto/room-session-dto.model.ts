@@ -2,8 +2,8 @@ import { Expose } from "class-transformer";
 
 export class RoomSessionDtoModel {
     @Expose()
-    roomCode: string;
+    roomCode!: string;
 
     @Expose()
-    token: string;
+    token!: string;
 }

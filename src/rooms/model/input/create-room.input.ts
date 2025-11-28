@@ -10,7 +10,7 @@ export class CreateRoomInput {
     @IsNotEmpty()
     @Length(USER_DISPLAY_NAME_MIN_LENGTH, USER_DISPLAY_NAME_MAX_LENGTH)
     @IsString()
-    displayName: string;
+    displayName!: string;
 
     @IsOptional()
     @Max(ROOM_MAX_USERS)

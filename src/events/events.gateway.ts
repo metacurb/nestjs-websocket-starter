@@ -27,7 +27,7 @@ import { type GatewayEvents } from "./model/room.event";
 @WebSocketGateway({ namespace: "rooms" })
 export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
     @WebSocketServer()
-    server: Server;
+    server!: Server;
 
     constructor(
         private readonly jwtAuthService: JwtAuthService,
