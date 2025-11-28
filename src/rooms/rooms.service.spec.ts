@@ -390,18 +390,19 @@ describe("RoomsService", () => {
     });
 
     describe("leave", () => {
-        test("should remove member from room", async () => {
+        test("should remove member from room and delete user", async () => {
             const room = createMockRoom({ hostId: "host-123" });
-            roomsRepository.getMembers.mockResolvedValueOnce(["host-123", "user-123"]);
+            roomsRepository.isMember.mockResolvedValueOnce(true);
             roomsRepository.findByCode.mockResolvedValueOnce(room);
 
             await service.leave("ABCD12", "user-123");
 
             expect(roomsRepository.removeMember).toHaveBeenCalledWith("ABCD12", "user-123");
+            expect(usersService.delete).toHaveBeenCalledWith("user-123");
         });
 
         test("should throw UserNotFoundException when user not in room", async () => {
-            roomsRepository.getMembers.mockResolvedValueOnce(["other-user"]);
+            roomsRepository.isMember.mockResolvedValueOnce(false);
 
             await expect(service.leave("ABCD12", "user-123")).rejects.toThrow(
                 UserNotFoundException,
@@ -410,18 +411,44 @@ describe("RoomsService", () => {
 
         test("should transfer host when host leaves and other members exist", async () => {
             const room = createMockRoom({ hostId: "host-123" });
-            roomsRepository.getMembers.mockResolvedValueOnce(["host-123", "user-123"]);
-            roomsRepository.findByCode
-                .mockResolvedValueOnce(room) // getByCode in leave
-                .mockResolvedValueOnce(room); // getByCode in updateHost
             roomsRepository.isMember.mockResolvedValueOnce(true);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
+            // After removal, remaining members are fetched
+            roomsRepository.getMembers.mockResolvedValueOnce(["user-123"]);
 
             await service.leave("ABCD12", "host-123");
 
             expect(roomsRepository.removeMember).toHaveBeenCalledWith("ABCD12", "host-123");
+            expect(usersService.delete).toHaveBeenCalledWith("host-123");
             expect(roomsRepository.save).toHaveBeenCalledWith(
                 expect.objectContaining({ hostId: "user-123" }),
             );
+        });
+
+        test("should delete room when last member (host) leaves", async () => {
+            const room = createMockRoom({ hostId: "host-123" });
+            roomsRepository.isMember.mockResolvedValueOnce(true);
+            roomsRepository.findByCode.mockResolvedValueOnce(room);
+            // No remaining members
+            roomsRepository.getMembers.mockResolvedValueOnce([]);
+
+            await service.leave("ABCD12", "host-123");
+
+            expect(roomsRepository.removeMember).toHaveBeenCalledWith("ABCD12", "host-123");
+            expect(usersService.delete).toHaveBeenCalledWith("host-123");
+            expect(roomsRepository.delete).toHaveBeenCalledWith("ABCD12");
+        });
+
+        test("should handle room no longer existing during leave", async () => {
+            roomsRepository.isMember.mockResolvedValueOnce(true);
+            roomsRepository.findByCode.mockResolvedValueOnce(null);
+
+            await service.leave("ABCD12", "user-123");
+
+            expect(roomsRepository.removeMember).toHaveBeenCalledWith("ABCD12", "user-123");
+            expect(usersService.delete).toHaveBeenCalledWith("user-123");
+            // Should not try to transfer host or delete room
+            expect(roomsRepository.save).not.toHaveBeenCalled();
         });
     });
 

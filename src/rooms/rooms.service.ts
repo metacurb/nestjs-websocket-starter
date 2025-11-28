@@ -150,25 +150,36 @@ export class RoomsService {
     async leave(roomCode: string, userId: string): Promise<void> {
         this.logger.info({ roomCode, userId }, "User leaving room");
 
-        const members = await this.getRoomMembers(roomCode);
-        if (!members.includes(userId)) throw new UserNotFoundException();
+        const isMember = await this.isMember(roomCode, userId);
+        if (!isMember) throw new UserNotFoundException();
 
         await this.roomsRepository.removeMember(roomCode, userId);
+        await this.usersService.delete(userId);
 
-        const room = await this.getByCode(roomCode);
+        const room = await this.roomsRepository.findByCode(roomCode);
+
+        if (!room) {
+            this.logger.info({ roomCode }, "Room no longer exists");
+            return;
+        }
 
         if (room.hostId === userId) {
-            const nextHost = members.find((memberId) => memberId !== userId);
-            if (!nextHost) {
+            const remainingMembers = await this.getRoomMembers(roomCode);
+
+            if (remainingMembers.length === 0) {
                 this.logger.info({ roomCode }, "Last member left, deleting room");
-                await this.deleteRoom(roomCode);
+                await this.roomsRepository.delete(roomCode);
                 return;
             }
+
+            const nextHost = remainingMembers[0];
             this.logger.info(
                 { roomCode, previousHost: userId, newHost: nextHost },
                 "Host left, transferring to next member",
             );
-            await this.updateHost(room.hostId, roomCode, nextHost);
+
+            const updatedRoom = { ...room, hostId: nextHost };
+            await this.roomsRepository.save(updatedRoom);
         }
 
         this.logger.info({ roomCode, userId }, "User left room");
