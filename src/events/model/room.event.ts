@@ -20,7 +20,7 @@ export interface RoomErrorEvent {
 }
 
 interface RoomClosedEvent {
-    reason: "HOST_CLOSED" | "HOST_LEFT";
+    reason: "HOST_CLOSED";
 }
 
 interface RoomHostUpdatedEvent {
