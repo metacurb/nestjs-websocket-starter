@@ -10,7 +10,7 @@ import { JwtAuthService } from "./jwt-auth.service";
             useFactory: (config: ConfigService) => ({
                 secret: config.jwtSecret,
                 signOptions: {
-                    expiresIn: config.jwtExpiresIn,
+                    expiresIn: config.roomTtlSeconds,
                 },
             }),
             inject: [ConfigService],

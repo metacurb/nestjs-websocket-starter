@@ -126,7 +126,7 @@ describe("EventsGateway (e2e)", () => {
 
             expect(roomState.room.code).toBe(roomCode);
             expect(roomState.users).toHaveLength(1);
-            expect(roomState.users[0].isConnected).toBe(true);
+            expect(roomState.users[0]!.isConnected).toBe(true);
 
             socket.disconnect();
         });

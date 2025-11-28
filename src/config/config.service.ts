@@ -1,14 +1,9 @@
 import { Injectable } from "@nestjs/common";
 import { ConfigService as NestConfigService } from "@nestjs/config";
-import type { StringValue } from "ms";
 
 @Injectable()
 export class ConfigService {
     constructor(private config: NestConfigService) {}
-
-    get jwtExpiresIn(): StringValue {
-        return this.config.getOrThrow<StringValue>("ROOM_TTL_SECONDS");
-    }
 
     get jwtSecret() {
         return this.config.getOrThrow<string>("JWT_SECRET");

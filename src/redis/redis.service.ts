@@ -83,4 +83,9 @@ export class RedisService implements OnModuleDestroy {
         this.logger.trace({ key, value }, "SISMEMBER");
         return (await this.client.sismember(key, value)) === 1;
     }
+
+    async keys(pattern: string): Promise<string[]> {
+        this.logger.trace({ pattern }, "KEYS");
+        return await this.client.keys(pattern);
+    }
 }

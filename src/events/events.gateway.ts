@@ -226,7 +226,10 @@ export class EventsGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
                 this.logger.info({ roomCode, userId }, "User disconnected from room");
             } catch {
-                // User may have been deleted (e.g., room closed), ignore
+                this.logger.info(
+                    { roomCode, userId },
+                    "User disconnected from room, but user not found",
+                );
             }
         });
     }

@@ -172,13 +172,13 @@ export class RoomsService {
                 return;
             }
 
-            const nextHost = remainingMembers[0];
+            const nextHost = remainingMembers[0]!;
             this.logger.info(
                 { roomCode, previousHost: userId, newHost: nextHost },
                 "Host left, transferring to next member",
             );
 
-            const updatedRoom = { ...room, hostId: nextHost };
+            const updatedRoom: RoomStoreModel = { ...room, hostId: nextHost };
             await this.roomsRepository.save(updatedRoom);
         }
 
