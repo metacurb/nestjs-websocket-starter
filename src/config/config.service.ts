@@ -6,7 +6,7 @@ export class ConfigService {
     constructor(private config: NestConfigService) {}
 
     get corsOrigins(): string | string[] {
-        const origins = this.config.get<string>("CORS_ORIGINS", "*");
+        const origins = this.config.getOrThrow<string>("CORS_ORIGINS");
         if (origins === "*") return "*";
         return origins.split(",").map((o) => o.trim());
     }
@@ -21,6 +21,18 @@ export class ConfigService {
 
     get redisPort() {
         return this.config.getOrThrow<number>("REDIS_PORT");
+    }
+
+    get redisMaxRetries() {
+        return this.config.getOrThrow<number>("REDIS_MAX_RETRIES");
+    }
+
+    get redisConnectTimeout() {
+        return this.config.getOrThrow<number>("REDIS_CONNECT_TIMEOUT");
+    }
+
+    get redisCommandTimeout() {
+        return this.config.getOrThrow<number>("REDIS_COMMAND_TIMEOUT");
     }
 
     get roomCodeAlphabet() {
@@ -40,11 +52,11 @@ export class ConfigService {
     }
 
     get throttleTtlMs() {
-        return this.config.get<number>("THROTTLE_TTL_MS", 60000);
+        return this.config.getOrThrow<number>("THROTTLE_TTL_MS");
     }
 
     get throttleLimit() {
-        return this.config.get<number>("THROTTLE_LIMIT", 20);
+        return this.config.getOrThrow<number>("THROTTLE_LIMIT");
     }
 
     get userDisplayNameMaxLength() {

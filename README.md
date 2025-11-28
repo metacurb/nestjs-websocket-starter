@@ -18,10 +18,13 @@ Create a `.env` file with the following variables:
 
 | Variable                       | Description                                        |
 | ------------------------------ | -------------------------------------------------- |
-| `CORS_ORIGINS`                 | Allowed origins, comma-separated (default: *)      |
+| `CORS_ORIGINS`                 | Allowed origins, comma-separated (default: \*)     |
 | `JWT_SECRET`                   | Secret key for signing JWTs                        |
 | `REDIS_HOST`                   | Redis server host                                  |
 | `REDIS_PORT`                   | Redis server port                                  |
+| `REDIS_MAX_RETRIES`            | Max connection retries (default: 3)                |
+| `REDIS_CONNECT_TIMEOUT`        | Connection timeout in ms (default: 10000)          |
+| `REDIS_COMMAND_TIMEOUT`        | Command timeout in ms (default: 5000)              |
 | `ROOM_CODE_ALPHABET`           | Characters used to generate room codes             |
 | `ROOM_CODE_LENGTH`             | Length of generated room codes                     |
 | `ROOM_MAX_USERS`               | Maximum allowed users per room                     |

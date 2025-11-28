@@ -1,3 +1,5 @@
+import "./setup/test-env";
+
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import type { Socket } from "socket.io-client";
@@ -8,6 +10,7 @@ import { AppModule } from "../src/app.module";
 import { RedisService } from "../src/redis/redis.service";
 import type { RoomStoreModel } from "../src/rooms/model/store/room-store.model";
 import type { UserStoreModel } from "../src/users/model/user-store.model";
+import { redisMockProvider } from "./setup/redis-mock";
 
 interface RoomSession {
     roomCode: string;
@@ -27,7 +30,10 @@ describe("EventsGateway (e2e)", () => {
     beforeAll(async () => {
         const moduleFixture = await Test.createTestingModule({
             imports: [AppModule],
-        }).compile();
+        })
+            .overrideProvider(redisMockProvider.provide)
+            .useFactory({ factory: redisMockProvider.useFactory })
+            .compile();
 
         app = moduleFixture.createNestApplication();
         redisService = app.get(RedisService);
@@ -71,7 +77,9 @@ describe("EventsGateway (e2e)", () => {
         return `http://localhost:${port}/rooms`;
     };
 
-    const connectSocket = (token: string): Promise<Socket> => {
+    const connectSocket = (
+        token: string,
+    ): Promise<{ socket: Socket; roomState: RoomStateEvent }> => {
         return new Promise((resolve, reject) => {
             const socket = io(getSocketUrl(), {
                 auth: { token },
@@ -84,9 +92,10 @@ describe("EventsGateway (e2e)", () => {
                 reject(new Error("Socket connection timeout"));
             }, 5000);
 
-            socket.on("connect", () => {
+            // Listen for room:state BEFORE connect resolves to avoid race condition
+            socket.once("room:state", (roomState: RoomStateEvent) => {
                 clearTimeout(timeout);
-                resolve(socket);
+                resolve({ socket, roomState });
             });
 
             socket.on("connect_error", (err) => {
@@ -120,9 +129,7 @@ describe("EventsGateway (e2e)", () => {
     describe("Connection", () => {
         test("should connect and receive room:state", async () => {
             const { roomCode, token } = await createRoom();
-            const socket = await connectSocket(token);
-
-            const roomState = await waitForEvent<RoomStateEvent>(socket, "room:state");
+            const { socket, roomState } = await connectSocket(token);
 
             expect(roomState.room.code).toBe(roomCode);
             expect(roomState.users).toHaveLength(1);
@@ -134,13 +141,10 @@ describe("EventsGateway (e2e)", () => {
         test("should receive existing users on join", async () => {
             const { roomCode, token: hostToken } = await createRoom("Host");
 
-            const hostSocket = await connectSocket(hostToken);
-            await waitForEvent<RoomStateEvent>(hostSocket, "room:state");
+            const { socket: hostSocket } = await connectSocket(hostToken);
 
             const { token: user2Token } = await joinRoom(roomCode, "User2");
-            const user2Socket = await connectSocket(user2Token);
-
-            const roomState = await waitForEvent<RoomStateEvent>(user2Socket, "room:state");
+            const { socket: user2Socket, roomState } = await connectSocket(user2Token);
 
             expect(roomState.users).toHaveLength(2);
             expect(roomState.users.map((u) => u.displayName).sort()).toEqual(["Host", "User2"]);
@@ -152,8 +156,7 @@ describe("EventsGateway (e2e)", () => {
         test("should notify room when user connects", async () => {
             const { roomCode, token: hostToken } = await createRoom("Host");
 
-            const hostSocket = await connectSocket(hostToken);
-            await waitForEvent<RoomStateEvent>(hostSocket, "room:state");
+            const { socket: hostSocket } = await connectSocket(hostToken);
 
             const userConnectedPromise = waitForEvent<{ user: UserStoreModel }>(
                 hostSocket,
@@ -161,7 +164,7 @@ describe("EventsGateway (e2e)", () => {
             );
 
             const { token: user2Token } = await joinRoom(roomCode, "User2");
-            const user2Socket = await connectSocket(user2Token);
+            const { socket: user2Socket } = await connectSocket(user2Token);
 
             const { user } = await userConnectedPromise;
 
@@ -177,12 +180,10 @@ describe("EventsGateway (e2e)", () => {
         test("should notify room when user disconnects", async () => {
             const { roomCode, token: hostToken } = await createRoom("Host");
 
-            const hostSocket = await connectSocket(hostToken);
-            await waitForEvent<RoomStateEvent>(hostSocket, "room:state");
+            const { socket: hostSocket } = await connectSocket(hostToken);
 
             const { token: user2Token } = await joinRoom(roomCode, "User2");
-            const user2Socket = await connectSocket(user2Token);
-            await waitForEvent<RoomStateEvent>(user2Socket, "room:state");
+            const { socket: user2Socket } = await connectSocket(user2Token);
 
             const disconnectPromise = waitForEvent<{ user: UserStoreModel }>(
                 hostSocket,
@@ -203,9 +204,7 @@ describe("EventsGateway (e2e)", () => {
     describe("Room Actions", () => {
         test("should toggle room lock", async () => {
             const { token } = await createRoom();
-            const socket = await connectSocket(token);
-
-            await waitForEvent<RoomStateEvent>(socket, "room:state");
+            const { socket } = await connectSocket(token);
 
             const lockPromise = waitForEvent<{ isLocked: boolean }>(socket, "room:lock_toggled");
 
@@ -221,12 +220,10 @@ describe("EventsGateway (e2e)", () => {
         test("should transfer host", async () => {
             const { roomCode, token: hostToken } = await createRoom("Host");
 
-            const hostSocket = await connectSocket(hostToken);
-            await waitForEvent<RoomStateEvent>(hostSocket, "room:state");
+            const { socket: hostSocket } = await connectSocket(hostToken);
 
             const { token: user2Token } = await joinRoom(roomCode, "User2");
-            const user2Socket = await connectSocket(user2Token);
-            const user2State = await waitForEvent<RoomStateEvent>(user2Socket, "room:state");
+            const { socket: user2Socket, roomState: user2State } = await connectSocket(user2Token);
 
             const user2Id = user2State.users.find((u) => u.displayName === "User2")!.id;
 
@@ -248,12 +245,10 @@ describe("EventsGateway (e2e)", () => {
         test("should kick user", async () => {
             const { roomCode, token: hostToken } = await createRoom("Host");
 
-            const hostSocket = await connectSocket(hostToken);
-            await waitForEvent<RoomStateEvent>(hostSocket, "room:state");
+            const { socket: hostSocket } = await connectSocket(hostToken);
 
             const { token: user2Token } = await joinRoom(roomCode, "User2");
-            const user2Socket = await connectSocket(user2Token);
-            const user2State = await waitForEvent<RoomStateEvent>(user2Socket, "room:state");
+            const { socket: user2Socket, roomState: user2State } = await connectSocket(user2Token);
 
             const user2Id = user2State.users.find((u) => u.displayName === "User2")!.id;
 
@@ -277,12 +272,10 @@ describe("EventsGateway (e2e)", () => {
         test("should leave room", async () => {
             const { roomCode, token: hostToken } = await createRoom("Host");
 
-            const hostSocket = await connectSocket(hostToken);
-            await waitForEvent<RoomStateEvent>(hostSocket, "room:state");
+            const { socket: hostSocket } = await connectSocket(hostToken);
 
             const { token: user2Token } = await joinRoom(roomCode, "User2");
-            const user2Socket = await connectSocket(user2Token);
-            const user2State = await waitForEvent<RoomStateEvent>(user2Socket, "room:state");
+            const { socket: user2Socket, roomState: user2State } = await connectSocket(user2Token);
 
             const user2Id = user2State.users.find((u) => u.displayName === "User2")!.id;
 
@@ -304,12 +297,10 @@ describe("EventsGateway (e2e)", () => {
         test("should close room", async () => {
             const { roomCode, token: hostToken } = await createRoom("Host");
 
-            const hostSocket = await connectSocket(hostToken);
-            await waitForEvent<RoomStateEvent>(hostSocket, "room:state");
+            const { socket: hostSocket } = await connectSocket(hostToken);
 
             const { token: user2Token } = await joinRoom(roomCode, "User2");
-            const user2Socket = await connectSocket(user2Token);
-            await waitForEvent<RoomStateEvent>(user2Socket, "room:state");
+            const { socket: user2Socket } = await connectSocket(user2Token);
 
             const closedPromise = waitForEvent<{ reason: string }>(user2Socket, "room:closed");
 

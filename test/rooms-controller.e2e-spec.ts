@@ -1,9 +1,12 @@
+import "./setup/test-env";
+
 import type { INestApplication } from "@nestjs/common";
 import { Test } from "@nestjs/testing";
 import * as request from "supertest";
 
 import { AppModule } from "../src/app.module";
 import { RedisService } from "../src/redis/redis.service";
+import { redisMockProvider } from "./setup/redis-mock";
 
 interface RoomSession {
     roomCode: string;
@@ -18,7 +21,10 @@ describe("RoomsController (e2e)", () => {
     beforeAll(async () => {
         const moduleFixture = await Test.createTestingModule({
             imports: [AppModule],
-        }).compile();
+        })
+            .overrideProvider(redisMockProvider.provide)
+            .useFactory({ factory: redisMockProvider.useFactory })
+            .compile();
 
         app = moduleFixture.createNestApplication();
         redisService = app.get(RedisService);
